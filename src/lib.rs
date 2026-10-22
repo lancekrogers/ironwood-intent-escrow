@@ -4,6 +4,7 @@
 //! decisions this crate implements are in `docs/decisions/`.
 
 pub mod address;
+pub mod block_cache;
 pub mod cosign;
 pub mod error;
 mod files;

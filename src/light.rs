@@ -19,6 +19,11 @@ pub const TESTNET_SERVERS: [&str; 2] = [
     "https://testnet.zec.rocks:443",
 ];
 
+/// The server the wallet scans and broadcasts through. Lance accepted it on
+/// 2026-10-22, when it was the only one in `stack.md` returning an Ironwood
+/// tree.
+pub const SCAN_SERVER: &str = "https://testnet.zec.rocks:443";
+
 /// The wallet birthday file, beside the wallet seeds.
 pub const BIRTHDAY_FILE: &str = "birthday.json";
 

@@ -17,7 +17,7 @@ reddsa = { version = "0.5.2", features = ["frost"] }
 orchard = "0.16.0"
 zcash_primitives = "0.31.0"
 pczt = { version = "0.10.0", features = ["orchard", "prover", "signer", "io-finalizer", "tx-extractor"] }
-zcash_client_backend = { version = "0.25.0", features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-transport", "lightwalletd-tonic-tls-webpki-roots", "pczt"] }
+zcash_client_backend = { version = "0.25.0", features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-transport", "lightwalletd-tonic-tls-webpki-roots", "pczt", "sync"] }
 zcash_client_sqlite = { version = "0.23.0", features = ["orchard", "transparent-inputs"] }
 zcash_keys = { version = "0.17.0", features = ["orchard"] }
 zip32 = "0.3"
@@ -37,6 +37,7 @@ zeroize = "1"
 # The payer wallet (stack.md, Funding): zcash_client_sqlite takes a rand 0.10
 # RNG and secrecy seeds. The light servers are gRPC over TLS on port 443;
 # ring is the rustls provider because aws-lc-rs needs cmake.
+async-trait = "0.1"
 rand = { version = "0.10", features = ["sys_rng"] }
 rusqlite = "0.37"
 secrecy = "0.8"

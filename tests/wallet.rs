@@ -91,13 +91,14 @@ fn wallet_refund_addresses_are_fresh_and_ironwood_only() {
 }
 
 #[test]
-fn wallet_payer_address_has_no_transparent_receiver() {
+fn wallet_payer_address_is_ironwood_only() {
     let dir = tempfile::tempdir().unwrap();
     let wallet = new_wallet(dir.path());
     let address = wallet.payer_address().unwrap();
+    require_ironwood_only(&address).unwrap();
     assert!(!address.has_transparent());
+    assert!(!address.has_sapling());
     assert!(address.has_orchard());
-    assert!(address.has_sapling());
     assert!(address.encode(&Network::TestNetwork).starts_with("utest1"));
 }
 

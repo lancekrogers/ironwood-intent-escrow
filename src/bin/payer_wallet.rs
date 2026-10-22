@@ -1,27 +1,29 @@
 //! Creates the payer's testnet wallet and prints the address a faucet pays.
 //!
 //! ```text
-//! cargo run --bin payer_wallet -- <wallet-dir>
+//! cargo run --bin payer_wallet -- <wallet-dir> [--scan]
 //! ```
 //!
 //! `<wallet-dir>` must be outside any git repository: it holds the two
 //! wallet seeds. The program asks each light server in
 //! `docs/decisions/stack.md` for its tip and tree state, and reports which
 //! ones carry an Ironwood tree. It takes the birthday from the first that
-//! does and writes `birthday.json` beside the seeds. It does not sync. Run
-//! it again on an existing wallet and it only prints the address.
+//! does and writes `birthday.json` beside the seeds. Run it again on an
+//! existing wallet and it prints the address; add `--scan` to scan compact
+//! blocks from the birthday over the light server and print the balance.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use ironwood_intent_escrow::light::{
-    connect, require_ironwood_tree, tip_tree_state, BirthdayRecord, TESTNET_SERVERS,
+    connect, require_ironwood_tree, tip_tree_state, BirthdayRecord, SCAN_SERVER, TESTNET_SERVERS,
 };
 use ironwood_intent_escrow::wallet::{PayerWallet, PAYER_KEY_FILE};
 use ironwood_intent_escrow::Error;
 use zcash_client_backend::data_api::AccountBirthday;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_protocol::consensus::Network;
+use zcash_protocol::value::Zatoshis;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -41,11 +43,14 @@ async fn main() -> ExitCode {
 async fn run(dir: &Path) -> Result<(), Error> {
     let network = Network::TestNetwork;
     if dir.join(PAYER_KEY_FILE).exists() {
-        let wallet = PayerWallet::open(dir, network)?;
+        let mut wallet = PayerWallet::open(dir, network)?;
         println!(
             "payer address: {}",
             wallet.payer_address()?.encode(&network)
         );
+        if std::env::args().any(|a| a == "--scan") {
+            scan(&mut wallet).await?;
+        }
         return Ok(());
     }
     refuse_inside_git(dir)?;
@@ -62,6 +67,33 @@ async fn run(dir: &Path) -> Result<(), Error> {
         "payer address: {}",
         wallet.payer_address()?.encode(&network)
     );
+    Ok(())
+}
+
+/// Scans the wallet over the server Lance accepted and prints where the
+/// scan stands and the funding account's balance by pool.
+async fn scan(wallet: &mut PayerWallet) -> Result<(), Error> {
+    let mut client = connect(SCAN_SERVER).await?;
+    wallet.sync(&mut client).await?;
+    match wallet.summary()? {
+        Some(r) => println!(
+            "scanned to {} (tip {}): ironwood {} orchard {} sapling {} zatoshis",
+            u32::from(r.fully_scanned),
+            u32::from(r.chain_tip),
+            r.ironwood.into_u64(),
+            r.orchard.into_u64(),
+            r.sapling.into_u64()
+        ),
+        None => println!("no wallet summary yet"),
+    }
+    match wallet.spendable_note(Zatoshis::const_from_u64(1)) {
+        Ok(note) => println!(
+            "spendable Ironwood note: {} zatoshis, mined at {}",
+            note.note().value().inner(),
+            note.mined_height().map(u32::from).unwrap_or(0)
+        ),
+        Err(e) => println!("{e}"),
+    }
     Ok(())
 }
 

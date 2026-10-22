@@ -23,22 +23,24 @@ use zcash_client_backend::data_api::locking::LockedInputPolicy;
 use zcash_client_backend::data_api::wallet::input_selection::LockFilter;
 use zcash_client_backend::data_api::wallet::{ConfirmationsPolicy, TargetHeight};
 use zcash_client_backend::data_api::{
-    Account, AccountBirthday, InputSource, WalletRead, WalletWrite,
+    Account, AccountBalance, AccountBirthday, Balance, InputSource, WalletRead, WalletWrite,
 };
 use zcash_client_backend::wallet::ReceivedNote;
 use zcash_client_sqlite::util::SystemClock;
 use zcash_client_sqlite::wallet::init::init_wallet_db;
 use zcash_client_sqlite::{AccountUuid, ReceivedNoteId, WalletDb};
 use zcash_keys::address::UnifiedAddress;
-use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedSpendingKey};
-use zcash_protocol::consensus::Network;
+use zcash_keys::keys::{UnifiedAddressRequest, UnifiedSpendingKey};
+use zcash_protocol::consensus::{BlockHeight, Network};
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::ShieldedPool;
 use zeroize::Zeroize;
 
 use crate::address::require_ironwood_only;
+use crate::block_cache::MemBlockCache;
 use crate::error::Error;
 use crate::files::write_new;
+use crate::light::LightClient;
 
 /// The seed that owns the funding note.
 pub const PAYER_KEY_FILE: &str = "payer_wallet.key";
@@ -53,6 +55,23 @@ type Db = WalletDb<rusqlite::Connection, Network, SystemClock, UnwrapErr<SysRng>
 
 /// An Ironwood note the payer can spend, as the wallet database tracks it.
 pub type SpendableNote = ReceivedNote<ReceivedNoteId, orchard::note::Note>;
+
+/// Where a scan stands, and the funding account's balance in each pool.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WalletReport {
+    /// The chain tip the last scan saw.
+    pub chain_tip: BlockHeight,
+    /// The height below which every block has been scanned.
+    pub fully_scanned: BlockHeight,
+    /// Ironwood, the pool the escrow spends from.
+    pub ironwood: Zatoshis,
+    /// Orchard, where an older faucet may pay.
+    pub orchard: Zatoshis,
+    /// Sapling.
+    pub sapling: Zatoshis,
+}
+
+const SCAN_BATCH: u32 = 1_000;
 
 /// The payer's funding account and refund account.
 ///
@@ -123,25 +142,15 @@ impl PayerWallet {
         })
     }
 
-    /// The address a faucet pays: the funding account's Orchard and Sapling
-    /// receivers at diversifier index 0, and no transparent receiver. Ironwood
-    /// shares the Orchard receiver. The same seed always gives this address.
+    /// The address a faucet pays: the funding account's Orchard receiver at
+    /// diversifier index 0, alone. Ironwood shares the Orchard receiver. The
+    /// same seed always gives this address.
     pub fn payer_address(&self) -> Result<UnifiedAddress, Error> {
-        let request = UnifiedAddressRequest::custom(
-            ReceiverRequirement::Require,
-            ReceiverRequirement::Require,
-            ReceiverRequirement::Omit,
-        )
-        .map_err(|e| Error::Wallet(format!("{e:?}")))?;
         let (address, _) = self
             .ufvk(self.funding)?
-            .default_address(request)
+            .default_address(UnifiedAddressRequest::ORCHARD)
             .map_err(|e| Error::Wallet(format!("{e:?}")))?;
-        if address.has_transparent() {
-            return Err(Error::NotIronwoodOnly(
-                "the payer address has a transparent receiver",
-            ));
-        }
+        require_ironwood_only(&address)?;
         Ok(address)
     }
 
@@ -198,6 +207,38 @@ impl PayerWallet {
     /// funding output is. Never the all-zero key.
     pub fn outgoing_viewing_key(&self) -> Result<OutgoingViewingKey, Error> {
         Ok(orchard_fvk(&self.ufvk(self.funding)?)?.to_ovk(Scope::External))
+    }
+
+    /// Scans compact blocks from the light server, from where the last scan
+    /// stopped (or the birthday) to the server's tip, and stores what the two
+    /// accounts received. A light-client scan: no node, no full chain.
+    pub async fn sync(&mut self, client: &mut LightClient) -> Result<(), Error> {
+        let cache = MemBlockCache::default();
+        zcash_client_backend::sync::run(client, &self.network, &cache, &mut self.db, SCAN_BATCH)
+            .await
+            .map_err(|e| Error::LightServer(format!("scan: {e}")))
+    }
+
+    /// Scanned heights and the funding account's balances by pool.
+    pub fn summary(&self) -> Result<Option<WalletReport>, Error> {
+        let Some(summary) = self
+            .db
+            .get_wallet_summary(ConfirmationsPolicy::default())
+            .map_err(wallet_err)?
+        else {
+            return Ok(None);
+        };
+        let funding = summary.account_balances().get(&self.funding);
+        let pool = |f: fn(&AccountBalance) -> &Balance| {
+            funding.map(|b| f(b).total()).unwrap_or(Zatoshis::ZERO)
+        };
+        Ok(Some(WalletReport {
+            chain_tip: summary.chain_tip_height(),
+            fully_scanned: summary.fully_scanned_height(),
+            ironwood: pool(AccountBalance::ironwood_balance),
+            orchard: pool(AccountBalance::orchard_balance),
+            sapling: pool(AccountBalance::sapling_balance),
+        }))
     }
 
     /// The network this wallet is on.

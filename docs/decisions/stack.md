@@ -199,9 +199,9 @@ local node.
     server the payer wallet uses.
   - `zaino.testnet.unsafe.zec.rocks:443` answered HTTP 503 Service
     Unavailable, not gRPC.
-  - Whether `testnet.zec.rocks` serves Ironwood actions in compact blocks is
-    not yet measured, because no scan has run. The first sync after funding
-    measures it.
+  - `testnet.zec.rocks` serves Ironwood actions in compact blocks. The
+    payer wallet's first light-client scan, approved by Lance on 2026-10-22,
+    found the faucet note in the Ironwood pool from compact blocks alone.
 - TLS: `Cargo.toml` turns on `zcash_client_backend`'s
   `lightwalletd-tonic-transport` and `lightwalletd-tonic-tls-webpki-roots`,
   plus `tonic` 0.14 with `tls-ring` and `tokio`. ring is the rustls provider
@@ -227,10 +227,11 @@ local node.
   whether it pays an Ironwood receiver. Since NU6.3 forbids cross-address
   Orchard outputs in v6 bundles, a faucet running current software pays an
   Ironwood receiver when the unified address carries one. The payer wallet's
-  unified address therefore carries an Ironwood receiver and a Sapling
-  receiver and nothing transparent; if a faucet lands in Sapling, the wallet
-  moves the funds to Ironwood in a self-transfer before the fill. Two faucet
-  days cover one fill and one refund at the amounts sequence 05 uses.
+  unified address therefore carries only the Orchard receiver that Ironwood
+  shares: no Sapling and no transparent receiver (decided by Lance on
+  2026-10-22, replacing an Orchard-plus-Sapling address that was never
+  funded). No Sapling spend is ever built, so the Prover section stands. Two
+  faucet days cover one fill and one refund at the amounts sequence 05 uses.
 - NEAR testnet: `near create-account <name>.testnet --useFaucet` with
   near-cli-rs creates and funds an account from the built-in faucet;
   https://near-faucet.io adds more. Two accounts are needed, one solver that
@@ -247,21 +248,18 @@ local node.
   `refund.key`, `payer_wallet.sqlite`, and `birthday.json`, each mode 0600.
   The birthday is height 4,530,275, taken from the `testnet.zec.rocks` tree
   state at 4,530,274.
-- Faucet payment: pending. The address to pay is in `runs/payer_address.txt`.
-  It has an Orchard receiver, which Ironwood shares, and a Sapling receiver,
-  and no transparent receiver. Pay it from
-  https://faucet.testnet.valargroup.dev or https://zcashfaucet.jinolabs.xyz.
-  `PayerWallet::spendable_note` reads only the Ironwood pool, and it returns
-  `no_spendable_note` until a sync after the payment finds the note.
-- Open for that first sync. If a faucet pays the Sapling receiver, the
-  self-transfer above builds a Sapling spend, which needs the Groth16
-  parameters this file's Prover section says are not needed. If it pays the
-  Orchard pool rather than Ironwood, the note needs an Orchard-to-Ironwood
-  move. The funding account holds Sapling and Orchard keys, and the wallet
-  database tracks the Sapling, Orchard, and Ironwood pools, so the sync
-  shows which case occurred before either path is built.
+- Faucet payment: done 2026-10-22. `POST /api/claim` on
+  https://faucet.testnet.valargroup.dev, which needs no browser or captcha,
+  paid 0.125 TAZ to the address in `runs/payer_address.txt`. The note was
+  mined at height 4,530,426 in the Ironwood pool, and
+  `PayerWallet::spendable_note` returned it after the default ten
+  confirmations. https://zcashfaucet.jinolabs.xyz needs a browser captcha
+  and was not used. One payout covers both runs: each escrow note is well
+  under half of it.
+- The Orchard-pool case did not occur: the valar faucet paid the Orchard
+  receiver into the Ironwood pool, so no Orchard-to-Ironwood move is built.
 
 ## Not pinned
 
-The light server for tree state is `testnet.zec.rocks:443`, measured
-above. Its compact-block support for Ironwood is measured at the first sync.
+Nothing. The light server is `testnet.zec.rocks:443` for tree state,
+compact blocks, and broadcast, measured above.
