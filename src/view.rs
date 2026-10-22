@@ -1,13 +1,21 @@
 //! What a co-signer checks in an escrow spend package before round 2,
 //! without holding any share.
 //!
-//! The view needs the PCZT and `escrow.fvk`, which every holder has. The
-//! memo is inside the encrypted output, and the escrow spend encrypts its
-//! outputs to the escrow's own outgoing viewing key, so `escrow.fvk` opens
-//! them. An output that does not open under it, including one encrypted to
-//! the all-zero key, makes the view fail.
+//! The view takes the PCZT, `escrow.fvk` (which every holder has), and the
+//! outgoing viewing key the package's outputs were encrypted to: the escrow
+//! OVK for a release, the refund account's OVK for a refund, which the
+//! solver does not hold. It trusts no field of the package it has not
+//! checked:
+//!
+//! - nothing outside one Ironwood bundle: no transparent input or output, no
+//!   Sapling spend or output, no Orchard action;
+//! - every Ironwood action's value commitment, output note commitment,
+//!   nullifier, and `rk` verified, so the values it reports are the values
+//!   the transaction moves;
+//! - every value-carrying output opened under the given OVK, which refuses
+//!   one encrypted to the all-zero key.
 
-use orchard::keys::{FullViewingKey, Scope};
+use orchard::keys::{FullViewingKey, OutgoingViewingKey};
 use orchard::note::ExtractedNoteCommitment;
 use orchard::pczt::Bundle;
 use pasta_curves::group::ff::PrimeField;
@@ -39,6 +47,8 @@ pub struct CheckerView {
     pub spent_cmx: [u8; 32],
     /// The escrow note's value.
     pub spent_value: u64,
+    /// What the escrow note pays that no output receives: the fee.
+    pub fee: u64,
     /// The Ironwood action that spends it.
     pub spend_index: usize,
     /// Every value-carrying output, opened under the escrow OVK.
@@ -55,16 +65,25 @@ pub struct CheckerView {
 }
 
 /// What the Ironwood bundle yields, before the cross-checks.
+#[derive(Default)]
 struct Scan {
     spend: Option<(usize, [u8; 32], u64, [u8; 32])>,
+    spent_total: u64,
+    output_total: u64,
     outputs: Vec<ViewOutput>,
     memo_ids: Vec<QuoteId>,
     problems: Vec<String>,
 }
 
 impl CheckerView {
-    /// Reads the view from an IO-finalized escrow spend package.
-    pub fn new(pczt: &Pczt, escrow_fvk: &FullViewingKey) -> Result<Self, Error> {
+    /// Reads the view from an IO-finalized escrow spend package whose
+    /// outputs were encrypted to `output_ovk`.
+    pub fn new(
+        pczt: &Pczt,
+        escrow_fvk: &FullViewingKey,
+        output_ovk: &OutgoingViewingKey,
+    ) -> Result<Self, Error> {
+        refuse_other_pools(pczt)?;
         let pczt_hash = pczt_hash(pczt)?;
         let sighash = Signer::new(pczt.clone())
             .map_err(|e| Error::Pczt(format!("signer: {e:?}")))?
@@ -72,7 +91,7 @@ impl CheckerView {
         let mut scan = None;
         Verifier::new(pczt.clone())
             .with_ironwood::<(), _>(|bundle| {
-                scan = Some(scan_bundle(bundle, escrow_fvk));
+                scan = Some(scan_bundle(bundle, escrow_fvk, output_ovk));
                 Ok(())
             })
             .map_err(|e| Error::Pczt(format!("verifier: {e:?}")))?;
@@ -83,10 +102,15 @@ impl CheckerView {
         let (spend_index, alpha, spent_value, spent_cmx) = scan
             .spend
             .ok_or_else(|| Error::Pczt("the package spends no escrow note".into()))?;
+        let fee = scan
+            .spent_total
+            .checked_sub(scan.output_total)
+            .ok_or_else(|| Error::Pczt("the outputs exceed what the package spends".into()))?;
         let quote_id = agreed_quote_id(pczt, &scan.memo_ids)?;
         Ok(CheckerView {
             spent_cmx,
             spent_value,
+            fee,
             spend_index,
             outputs: scan.outputs,
             quote_id,
@@ -106,18 +130,34 @@ pub fn pczt_hash(pczt: &Pczt) -> Result<[u8; 32], Error> {
     Ok(Sha256::digest(bytes).into())
 }
 
-fn scan_bundle(bundle: &Bundle, escrow_fvk: &FullViewingKey) -> Scan {
-    let ovk = escrow_fvk.to_ovk(Scope::External);
+/// An escrow spend has one Ironwood bundle and nothing else.
+fn refuse_other_pools(pczt: &Pczt) -> Result<(), Error> {
+    let transparent = pczt.transparent();
+    if !transparent.inputs().is_empty() || !transparent.outputs().is_empty() {
+        return Err(Error::TransparentOutput);
+    }
+    let sapling = pczt.sapling();
+    if !sapling.spends().is_empty() || !sapling.outputs().is_empty() {
+        return Err(Error::Pczt("the package has a Sapling part".into()));
+    }
+    if !pczt.orchard().actions().is_empty() {
+        return Err(Error::Pczt("the package has an Orchard action".into()));
+    }
+    Ok(())
+}
+
+fn scan_bundle(bundle: &Bundle, escrow_fvk: &FullViewingKey, ovk: &OutgoingViewingKey) -> Scan {
     let version = *bundle.bundle_version();
-    let mut scan = Scan {
-        spend: None,
-        outputs: vec![],
-        memo_ids: vec![],
-        problems: vec![],
-    };
+    let mut scan = Scan::default();
     for (index, action) in bundle.actions().iter().enumerate() {
-        let spend = action.spend();
-        let spend_value = spend.value().map(|v| v.inner()).unwrap_or(0);
+        if let Err(e) = verify_action(action, escrow_fvk) {
+            scan.problems.push(format!("action {index}: {e}"));
+            continue;
+        }
+        let spend_value = action.spend().value().map(|v| v.inner()).unwrap_or(0);
+        let output_value = action.output().value().map(|v| v.inner()).unwrap_or(0);
+        scan.spent_total = scan.spent_total.saturating_add(spend_value);
+        scan.output_total = scan.output_total.saturating_add(output_value);
         if spend_value > 0 {
             match escrow_spend(action, escrow_fvk) {
                 Ok((alpha, cmx)) if scan.spend.is_none() => {
@@ -129,11 +169,10 @@ fn scan_bundle(bundle: &Bundle, escrow_fvk: &FullViewingKey) -> Scan {
                 Err(e) => scan.problems.push(e),
             }
         }
-        let output_value = action.output().value().map(|v| v.inner()).unwrap_or(0);
         if output_value == 0 {
             continue;
         }
-        match action.recover_output_with_ovk(&ovk, version) {
+        match action.recover_output_with_ovk(ovk, version) {
             Ok(Some((note, address, memo))) if note.value().inner() == output_value => {
                 scan.outputs.push(ViewOutput {
                     action_index: index,
@@ -146,11 +185,35 @@ fn scan_bundle(bundle: &Bundle, escrow_fvk: &FullViewingKey) -> Scan {
                 }
             }
             _ => scan.problems.push(format!(
-                "output {index} does not open under the escrow outgoing viewing key"
+                "output {index} does not open under the given outgoing viewing key"
             )),
         }
     }
     scan
+}
+
+/// Binds every field the view reads to the action's commitments. A spend
+/// with value must belong to `escrow.fvk`; a zero-valued dummy spend may
+/// carry its own key.
+fn verify_action(
+    action: &orchard::pczt::Action,
+    escrow_fvk: &FullViewingKey,
+) -> Result<(), String> {
+    action
+        .verify_cv_net()
+        .map_err(|e| format!("value commitment: {e:?}"))?;
+    action
+        .output()
+        .verify_note_commitment(action.spend())
+        .map_err(|e| format!("output note commitment: {e:?}"))?;
+    action
+        .spend()
+        .verify_nullifier(Some(escrow_fvk))
+        .map_err(|e| format!("nullifier: {e:?}"))?;
+    action
+        .spend()
+        .verify_rk(Some(escrow_fvk))
+        .map_err(|e| format!("rk: {e:?}"))
 }
 
 /// The escrow spend's `alpha` and spent `cmx`, after checking that `rk` and

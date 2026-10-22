@@ -217,17 +217,22 @@ pub fn escrow_spend_fee(
 }
 
 /// Builds the escrow spend package: the escrow note in, `outputs` out, each
-/// encrypted to the escrow's own outgoing viewing key and carrying the quote
-/// id as its memo. There is no field named for a refund address.
+/// encrypted to `ovk` and carrying the quote id as its memo. There is no
+/// field named for a refund address.
 ///
-/// The outputs plus the fee must equal the note value exactly.
+/// `ovk` decides who can read the outputs back: the escrow OVK for a
+/// release, which every holder has; the refund account's OVK for a refund,
+/// which the payer and the deadline device have and the solver does not.
+/// The all-zero key is refused. The outputs plus the fee must equal the note
+/// value exactly.
 pub fn spend_pczt(
     network: Network,
     inputs: &NoteInputs,
     outputs: &[SpendOutput],
     quote_id: &QuoteId,
+    ovk: &OutgoingViewingKey,
 ) -> Result<EscrowSpend, Error> {
-    spend_pczt_with_rng(network, inputs, outputs, quote_id, &mut rng())
+    spend_pczt_with_rng(network, inputs, outputs, quote_id, ovk, &mut rng())
 }
 
 /// [`spend_pczt`] with the caller's RNG, which fixes every randomizer the
@@ -238,8 +243,12 @@ pub fn spend_pczt_with_rng<R: rand::CryptoRng>(
     inputs: &NoteInputs,
     outputs: &[SpendOutput],
     quote_id: &QuoteId,
+    ovk: &OutgoingViewingKey,
     rng: &mut R,
 ) -> Result<EscrowSpend, Error> {
+    if ovk.as_ref() == &ZERO_OVK {
+        return Err(Error::ZeroOutgoingViewingKey);
+    }
     if outputs.is_empty() {
         return Err(Error::Pczt("an escrow spend needs an output".into()));
     }
@@ -253,7 +262,6 @@ pub fn spend_pczt_with_rng<R: rand::CryptoRng>(
             outputs_and_fee: total.unwrap_or(u64::MAX),
         });
     }
-    let ovk = inputs.fvk.to_ovk(Scope::External);
     let mut builder = escrow_builder(network, inputs)?;
     for output in outputs {
         require_ironwood_only(&output.address)?;
