@@ -100,6 +100,15 @@ Three facts the versions force:
 The `orchard` crate's `unstable-frost` feature only widens visibility of two
 items in `keys.rs`. It is not a FROST implementation. Not enabled.
 
+One feature pairing the lockfile does not catch: `zcash_client_backend`'s
+`pczt` feature turns on `transparent-inputs` in the backend and in
+`zcash_keys`. `zcash_client_sqlite` 0.23.0 then fails to compile (12 errors:
+missing transparent trait items, non-exhaustive `Recipient` matches) unless
+its own `transparent-inputs` feature is on too. `Cargo.toml` enables it. It
+compiles the wallet's transparent code; the checker still rejects any
+transparent output, and the payer wallet never derives a transparent
+receiver.
+
 ## Prover
 
 No parameter files. ZIP 2005 changes the note construction and "would not

@@ -18,7 +18,7 @@ orchard = "0.16.0"
 zcash_primitives = "0.31.0"
 pczt = { version = "0.10.0", features = ["orchard", "prover", "signer", "io-finalizer", "tx-extractor"] }
 zcash_client_backend = { version = "0.25.0", features = ["orchard", "lightwalletd-tonic", "pczt"] }
-zcash_client_sqlite = { version = "0.23.0", features = ["orchard"] }
+zcash_client_sqlite = { version = "0.23.0", features = ["orchard", "transparent-inputs"] }
 zcash_keys = { version = "0.17.0", features = ["orchard"] }
 zcash_address = "0.14.0"
 zcash_protocol = "0.11.0"
