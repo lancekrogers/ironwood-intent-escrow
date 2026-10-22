@@ -8,7 +8,7 @@
 //! `escrow.fvk`, and drops everything else. [`keygen`] keeps its signature so
 //! the distributed path can replace its body without changing callers.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
@@ -41,7 +41,9 @@ pub const FVK_FILE: &str = "escrow.fvk";
 /// `solver.key`, `deadline.key`, and `escrow.fvk` into `out_dir`.
 ///
 /// No other file is written, and the combined spending key is neither
-/// written nor returned. Refuses to overwrite an existing file.
+/// written nor returned. Refuses to overwrite an existing file, so pass an
+/// empty directory: if a write fails partway, the files already written stay
+/// and a retry into the same directory fails rather than mixing two keys.
 pub fn keygen(out_dir: &Path) -> Result<FullViewingKey, Error> {
     let sk = random_spending_key();
     let fvk = FullViewingKey::from(&sk);
@@ -175,12 +177,12 @@ pub fn aggregate(
             by_signer.len()
         )));
     }
-    let committed: Vec<Identifier> = package
+    let committed: BTreeSet<Identifier> = package
         .signers()?
         .into_iter()
         .map(SignerId::identifier)
         .collect();
-    if !committed.iter().eq(by_signer.keys()) {
+    if committed != by_signer.keys().copied().collect() {
         return Err(Error::ShareSetMismatch);
     }
     let frost_package = package.to_frost()?;
