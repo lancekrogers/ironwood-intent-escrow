@@ -271,3 +271,19 @@ pub fn fixture_pointer() -> ironwood_intent_escrow::attest::NearTxPointer {
         sender: "solver-ironwood.testnet".into(),
     }
 }
+
+/// An offline payer wallet in `dir`: birthday at Ironwood activation with an
+/// empty chain state, so it never talks to a light server.
+pub fn offline_wallet(dir: &std::path::Path) -> ironwood_intent_escrow::wallet::PayerWallet {
+    use zcash_client_backend::data_api::chain::ChainState;
+    use zcash_client_backend::data_api::AccountBirthday;
+    use zcash_primitives::block::BlockHash;
+    use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+    let activation = Network::TestNetwork
+        .activation_height(NetworkUpgrade::Nu6_3)
+        .unwrap();
+    let birthday =
+        AccountBirthday::from_parts(ChainState::empty(activation - 1, BlockHash([0; 32])), None);
+    ironwood_intent_escrow::wallet::PayerWallet::create(dir, Network::TestNetwork, &birthday)
+        .unwrap()
+}

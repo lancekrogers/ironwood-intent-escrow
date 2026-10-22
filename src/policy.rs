@@ -5,6 +5,9 @@
 //!   (`attest`), and only for a package that pays the solver the quote.
 //! - The deadline device, the payer's second device, never signs a package
 //!   that pays the solver. It signs only a refund after the quote's expiry.
+//! - A refund is built inside the payer's wallet: the address is allocated
+//!   from the refund key when the package is built, and the output is
+//!   encrypted to the refund OVK, which the solver does not hold.
 //!
 //! Each signer first checks the coordinator's `SigningPackage` against the
 //! PCZT it holds: the package hash, the sighash, and the randomizer must be
@@ -15,14 +18,17 @@ use orchard::keys::{FullViewingKey, OutgoingViewingKey, Scope};
 use pczt::Pczt;
 use reddsa::frost::redpallas::round1::SigningNonces;
 use zcash_keys::address::UnifiedAddress;
+use zcash_protocol::value::Zatoshis;
 
 use crate::address::require_ironwood_only;
 use crate::attest::{attest, Attestation, Banned, NearRpc, NearTxPointer};
 use crate::cosign::{Commitments, Share, SignerId, SigningPackage};
 use crate::error::Error;
 use crate::frost::{round2, ShareFile};
+use crate::note::{escrow_spend_fee, spend_pczt, EscrowSpend, NoteInputs, SpendOutput};
 use crate::quote::Quote;
 use crate::view::{verify_package, CheckerView, PackageFacts};
+use crate::wallet::PayerWallet;
 
 /// The signing package the coordinator builds from the package facts and
 /// the round 1 commitments of the two signers taking part.
@@ -35,20 +41,20 @@ pub fn signing_package(facts: &PackageFacts, commitments: Vec<Commitments>) -> S
     }
 }
 
-/// The payer process: `payer.key`, `escrow.fvk`, and the solver's address.
+/// The payer process: `payer.key`, `escrow.fvk`, the payer's refund full
+/// viewing key, and the solver's address.
 pub struct PayerSigner {
     share: ShareFile,
     escrow_fvk: FullViewingKey,
+    refund_fvk: FullViewingKey,
     solver: orchard::Address,
 }
 
 /// The deadline device: `deadline.key`, `escrow.fvk`, the payer's refund
 /// full viewing key, and the solver's address.
 pub struct DeadlineSigner {
-    #[allow(dead_code)] // signs refunds, which the next task (04_refund_rule) adds
     share: ShareFile,
     escrow_fvk: FullViewingKey,
-    #[allow(dead_code)] // recognises refund outputs, added in 04_refund_rule
     refund_fvk: FullViewingKey,
     solver: orchard::Address,
 }
@@ -58,12 +64,14 @@ impl PayerSigner {
     pub fn new(
         share: ShareFile,
         escrow_fvk: FullViewingKey,
+        refund_fvk: FullViewingKey,
         solver: &UnifiedAddress,
     ) -> Result<Self, Error> {
         require_role(&share, SignerId::Payer)?;
         Ok(PayerSigner {
             share,
             escrow_fvk,
+            refund_fvk,
             solver: ironwood_receiver(solver)?,
         })
     }
@@ -127,23 +135,129 @@ pub fn payer_release(
     Ok((round2(&signer.share, nonces, package)?, attestation))
 }
 
-/// The deadline device's round 2. A package that pays the solver is
-/// `refused_release`, checked first and unconditionally.
+/// The deadline device's round 2, in the order `shares.md` fixes:
+///
+/// 1. the package must be the PCZT's own (`package_mismatch`);
+/// 2. a package that pays the solver is `refused_release`, checked first
+///    and unconditionally;
+/// 3. the memo quote id must be `quote.id` (`not_a_refund`);
+/// 4. `now` must be at or past `quote.expiry_unix`, the expiry of the quote
+///    the device was handed, never one read from the memo (`not_expired`);
+/// 5. every output must be an address the payer's refund key detects
+///    (`not_a_refund`).
 pub fn deadline_sign(
     signer: &DeadlineSigner,
-    _quote: &Quote,
+    quote: &Quote,
     pczt: &Pczt,
-    _nonces: SigningNonces,
+    nonces: SigningNonces,
     package: &SigningPackage,
-    _now: u64,
+    now: u64,
 ) -> Result<Share, Error> {
     let facts = check_package(pczt, package, &signer.escrow_fvk)?;
     if facts.outputs.iter().any(|o| o.address == signer.solver) {
         return Err(Error::RefusedRelease);
     }
-    Err(Error::NotARefund(
-        "refund signing is not defined yet".into(),
-    ))
+    check_refund(quote, pczt, &signer.escrow_fvk, &signer.refund_fvk, now)?;
+    round2(&signer.share, nonces, package)
+}
+
+/// The payer's round 2 for a refund: the same checks as the deadline
+/// device, against the payer's own refund key.
+pub fn payer_refund(
+    signer: &PayerSigner,
+    quote: &Quote,
+    pczt: &Pczt,
+    nonces: SigningNonces,
+    package: &SigningPackage,
+    now: u64,
+) -> Result<Share, Error> {
+    let facts = check_package(pczt, package, &signer.escrow_fvk)?;
+    if facts.outputs.iter().any(|o| o.address == signer.solver) {
+        return Err(Error::NotARefund("the package pays the solver".into()));
+    }
+    check_refund(quote, pczt, &signer.escrow_fvk, &signer.refund_fvk, now)?;
+    round2(&signer.share, nonces, package)
+}
+
+/// The refund OVK: a refund's output opens under it, and the solver does
+/// not hold it.
+pub fn refund_ovk(refund_fvk: &FullViewingKey) -> OutgoingViewingKey {
+    refund_fvk.to_ovk(Scope::External)
+}
+
+/// Builds the refund package after expiry: the escrow note, less the fee,
+/// to a fresh address from the payer wallet's refund key, encrypted to the
+/// refund OVK, with `quote.id` in the memo. The address comes from the
+/// wallet, never from the quote, and the quote is not written.
+pub fn build_refund(
+    quote: &Quote,
+    escrow_note: &NoteInputs,
+    wallet: &mut PayerWallet,
+    now: u64,
+) -> Result<EscrowSpend, Error> {
+    if now < quote.expiry_unix {
+        return Err(Error::NotExpired {
+            expiry_unix: quote.expiry_unix,
+            now,
+        });
+    }
+    let address = wallet.fresh_refund_address()?;
+    let network = wallet.network();
+    let fee = escrow_spend_fee(network, escrow_note, 1)?;
+    let value = escrow_note
+        .note
+        .value()
+        .inner()
+        .checked_sub(fee.into_u64())
+        .ok_or(Error::InsufficientFunds {
+            have: escrow_note.note.value().inner(),
+            need: fee.into_u64(),
+        })?;
+    let outputs = [SpendOutput {
+        address,
+        value: Zatoshis::from_u64(value).map_err(|e| Error::Pczt(format!("{e:?}")))?,
+    }];
+    spend_pczt(
+        network,
+        escrow_note,
+        &outputs,
+        &quote.id,
+        &refund_ovk(&wallet.refund_fvk()?),
+    )
+}
+
+/// Steps 3 to 5 of the refund rule.
+fn check_refund(
+    quote: &Quote,
+    pczt: &Pczt,
+    escrow_fvk: &FullViewingKey,
+    refund_fvk: &FullViewingKey,
+    now: u64,
+) -> Result<(), Error> {
+    let view = CheckerView::new(pczt, escrow_fvk, &refund_ovk(refund_fvk)).map_err(|e| {
+        Error::NotARefund(format!("the outputs do not open under the refund key: {e}"))
+    })?;
+    if view.quote_id != quote.id {
+        return Err(Error::NotARefund(
+            "the memo carries another quote id".into(),
+        ));
+    }
+    if now < quote.expiry_unix {
+        return Err(Error::NotExpired {
+            expiry_unix: quote.expiry_unix,
+            now,
+        });
+    }
+    if view
+        .outputs
+        .iter()
+        .any(|o| refund_fvk.scope_for_address(&o.address).is_none())
+    {
+        return Err(Error::NotARefund(
+            "an output is not an address the refund key detects".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// The package must be the PCZT's own: hash, sighash, and randomizer.
