@@ -5,6 +5,7 @@
 
 pub mod address;
 pub mod block_cache;
+pub mod checker;
 pub mod cosign;
 pub mod error;
 mod files;

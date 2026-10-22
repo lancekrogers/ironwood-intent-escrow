@@ -67,10 +67,16 @@ pub enum Error {
     LightServer(String),
 
     /// An output would be encrypted to the all-zero outgoing viewing key.
-    #[error(
-        "zero_outgoing_viewing_key: an output would open under the all-zero outgoing viewing key"
-    )]
+    #[error("zero_outgoing_viewing_key: an output opens under the all-zero outgoing viewing key")]
     ZeroOutgoingViewingKey,
+
+    /// A ZEC transaction has a transparent input or output.
+    #[error("transparent_output: the transaction has a transparent input or output")]
+    TransparentOutput,
+
+    /// The checker could not read its input.
+    #[error("checker: {0}")]
+    Checker(String),
 
     /// The note does not cover the amount plus the fee.
     #[error("insufficient_funds: the note holds {have} zatoshis and the transaction needs {need}")]
