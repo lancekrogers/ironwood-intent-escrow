@@ -75,6 +75,36 @@ struct Scan {
     problems: Vec<String>,
 }
 
+/// What any signer can verify in an escrow spend package without an
+/// outgoing viewing key: every field bound to its commitment, and the
+/// signing inputs. Output addresses come from the package's own fields,
+/// which `verify_action` has bound to each output's note commitment.
+#[derive(Clone, Debug)]
+pub struct PackageFacts {
+    /// The commitment (`cmx`) of the escrow note being spent.
+    pub spent_cmx: [u8; 32],
+    /// The escrow note's value.
+    pub spent_value: u64,
+    /// What the escrow note pays that no output receives: the fee.
+    pub fee: u64,
+    /// The Ironwood action that spends it.
+    pub spend_index: usize,
+    /// Every value-carrying output.
+    pub outputs: Vec<ViewOutput>,
+    /// The shielded sighash the FROST signature covers.
+    pub sighash: [u8; 32],
+    /// The escrow spend's `alpha`.
+    pub randomizer: SpendRandomizer,
+    /// SHA-256 of the serialized package.
+    pub pczt_hash: [u8; 32],
+}
+
+/// Verifies an escrow spend package and returns its facts. The deadline
+/// signer uses this to refuse a solver payout before it opens any memo.
+pub fn verify_package(pczt: &Pczt, escrow_fvk: &FullViewingKey) -> Result<PackageFacts, Error> {
+    verify(pczt, escrow_fvk, None).map(|(facts, _)| facts)
+}
+
 impl CheckerView {
     /// Reads the view from an IO-finalized escrow spend package whose
     /// outputs were encrypted to `output_ovk`.
@@ -83,42 +113,61 @@ impl CheckerView {
         escrow_fvk: &FullViewingKey,
         output_ovk: &OutgoingViewingKey,
     ) -> Result<Self, Error> {
-        refuse_other_pools(pczt)?;
-        let pczt_hash = pczt_hash(pczt)?;
-        let sighash = Signer::new(pczt.clone())
-            .map_err(|e| Error::Pczt(format!("signer: {e:?}")))?
-            .shielded_sighash();
-        let mut scan = None;
-        Verifier::new(pczt.clone())
-            .with_ironwood::<(), _>(|bundle| {
-                scan = Some(scan_bundle(bundle, escrow_fvk, output_ovk));
-                Ok(())
-            })
-            .map_err(|e| Error::Pczt(format!("verifier: {e:?}")))?;
-        let scan = scan.ok_or_else(|| Error::Pczt("no Ironwood bundle".into()))?;
-        if let Some(problem) = scan.problems.first() {
-            return Err(Error::Pczt(problem.clone()));
-        }
-        let (spend_index, alpha, spent_value, spent_cmx) = scan
-            .spend
-            .ok_or_else(|| Error::Pczt("the package spends no escrow note".into()))?;
-        let fee = scan
-            .spent_total
-            .checked_sub(scan.output_total)
-            .ok_or_else(|| Error::Pczt("the outputs exceed what the package spends".into()))?;
-        let quote_id = agreed_quote_id(pczt, &scan.memo_ids)?;
+        let (facts, memo_ids) = verify(pczt, escrow_fvk, Some(output_ovk))?;
+        let quote_id = agreed_quote_id(pczt, &memo_ids)?;
         Ok(CheckerView {
-            spent_cmx,
-            spent_value,
-            fee,
-            spend_index,
-            outputs: scan.outputs,
+            spent_cmx: facts.spent_cmx,
+            spent_value: facts.spent_value,
+            fee: facts.fee,
+            spend_index: facts.spend_index,
+            outputs: facts.outputs,
             quote_id,
-            sighash,
-            randomizer: SpendRandomizer::deserialize(&alpha)?,
-            pczt_hash,
+            sighash: facts.sighash,
+            randomizer: facts.randomizer,
+            pczt_hash: facts.pczt_hash,
         })
     }
+}
+
+fn verify(
+    pczt: &Pczt,
+    escrow_fvk: &FullViewingKey,
+    output_ovk: Option<&OutgoingViewingKey>,
+) -> Result<(PackageFacts, Vec<QuoteId>), Error> {
+    refuse_other_pools(pczt)?;
+    let pczt_hash = pczt_hash(pczt)?;
+    let sighash = Signer::new(pczt.clone())
+        .map_err(|e| Error::Pczt(format!("signer: {e:?}")))?
+        .shielded_sighash();
+    let mut scan = None;
+    Verifier::new(pczt.clone())
+        .with_ironwood::<(), _>(|bundle| {
+            scan = Some(scan_bundle(bundle, escrow_fvk, output_ovk));
+            Ok(())
+        })
+        .map_err(|e| Error::Pczt(format!("verifier: {e:?}")))?;
+    let scan = scan.ok_or_else(|| Error::Pczt("no Ironwood bundle".into()))?;
+    if let Some(problem) = scan.problems.first() {
+        return Err(Error::Pczt(problem.clone()));
+    }
+    let (spend_index, alpha, spent_value, spent_cmx) = scan
+        .spend
+        .ok_or_else(|| Error::Pczt("the package spends no escrow note".into()))?;
+    let fee = scan
+        .spent_total
+        .checked_sub(scan.output_total)
+        .ok_or_else(|| Error::Pczt("the outputs exceed what the package spends".into()))?;
+    let facts = PackageFacts {
+        spent_cmx,
+        spent_value,
+        fee,
+        spend_index,
+        outputs: scan.outputs,
+        sighash,
+        randomizer: SpendRandomizer::deserialize(&alpha)?,
+        pczt_hash,
+    };
+    Ok((facts, scan.memo_ids))
 }
 
 /// SHA-256 of the package's serialized bytes.
@@ -146,7 +195,11 @@ fn refuse_other_pools(pczt: &Pczt) -> Result<(), Error> {
     Ok(())
 }
 
-fn scan_bundle(bundle: &Bundle, escrow_fvk: &FullViewingKey, ovk: &OutgoingViewingKey) -> Scan {
+fn scan_bundle(
+    bundle: &Bundle,
+    escrow_fvk: &FullViewingKey,
+    ovk: Option<&OutgoingViewingKey>,
+) -> Scan {
     let version = *bundle.bundle_version();
     let mut scan = Scan::default();
     for (index, action) in bundle.actions().iter().enumerate() {
@@ -172,6 +225,19 @@ fn scan_bundle(bundle: &Bundle, escrow_fvk: &FullViewingKey, ovk: &OutgoingViewi
         if output_value == 0 {
             continue;
         }
+        let Some(ovk) = ovk else {
+            match action.output().recipient() {
+                Some(address) => scan.outputs.push(ViewOutput {
+                    action_index: index,
+                    address: *address,
+                    value: output_value,
+                }),
+                None => scan
+                    .problems
+                    .push(format!("output {index} has no recipient")),
+            }
+            continue;
+        };
         match action.recover_output_with_ovk(ovk, version) {
             Ok(Some((note, address, memo))) if note.value().inner() == output_value => {
                 scan.outputs.push(ViewOutput {

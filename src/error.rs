@@ -129,6 +129,40 @@ pub enum Error {
     #[error("attestation: {0}")]
     Attestation(String),
 
+    /// The coordinator's signing package is not the PCZT's own.
+    #[error("package_mismatch: the package {0} is not the PCZT's")]
+    PackageMismatch(&'static str),
+
+    /// The deadline device was asked to sign a package that pays the solver.
+    #[error("refused_release: the deadline device never signs a payout to the solver")]
+    RefusedRelease,
+
+    /// A package presented as a refund is not one.
+    #[error("not_a_refund: {0}")]
+    NotARefund(String),
+
+    /// A refund was asked for before the quote's expiry.
+    #[error("not_expired: the quote expires at {expiry_unix} and it is {now}")]
+    NotExpired {
+        /// The quote's expiry.
+        expiry_unix: u64,
+        /// The time the signer was given.
+        now: u64,
+    },
+
+    /// A package presented as a release does not pay the solver the quote.
+    #[error("not_a_release: {0}")]
+    NotARelease(String),
+
+    /// A policy signer was handed another holder's share file.
+    #[error("wrong_role: expected the {expected:?} share, found the {found:?} share")]
+    WrongRole {
+        /// The role the signer plays.
+        expected: SignerId,
+        /// The role the share file belongs to.
+        found: SignerId,
+    },
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),

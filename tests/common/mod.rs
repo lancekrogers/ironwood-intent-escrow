@@ -170,3 +170,104 @@ pub fn fixture(payer: &Payer, escrow_ovk: [u8; 32], transparent: bool) -> Transa
         .unwrap();
     sign_prove_extract(payer, pczt, spend_index)
 }
+
+/// The escrow note's value in the escrow-spend and policy tests.
+pub const ESCROW_VALUE: u64 = 3_990_000;
+
+/// A `keygen` escrow key in `dir`, and a synthetic escrow note it owns,
+/// alone in a one-leaf tree.
+pub fn escrow_note(dir: &std::path::Path) -> NoteInputs {
+    let fvk = keygen(dir).unwrap();
+    let rho = loop {
+        if let Some(rho) = Option::from(Rho::from_bytes(&random_bytes())) {
+            break rho;
+        }
+    };
+    let rseed = loop {
+        if let Some(r) = Option::from(RandomSeed::from_bytes(random_bytes(), &rho)) {
+            break r;
+        }
+    };
+    let note = orchard::Note::from_parts(
+        fvk.address_at(0u32, Scope::External),
+        NoteValue::from_raw(ESCROW_VALUE),
+        rho,
+        rseed,
+        NoteVersion::V3,
+    )
+    .unwrap();
+    let auth_path: [MerkleHashOrchard; 32] =
+        std::array::from_fn(|l| MerkleHashOrchard::empty_root(Level::from(l as u8)));
+    let merkle_path = MerklePath::from_parts(0, auth_path);
+    let anchor = merkle_path.root(note.commitment().into());
+    NoteInputs {
+        fvk,
+        note,
+        merkle_path,
+        anchor,
+        target_height: BlockHeight::from_u32(4_530_600),
+    }
+}
+
+/// A throwaway full viewing key, for a stand-in solver or refund account.
+pub fn throwaway_fvk() -> FullViewingKey {
+    FullViewingKey::from(&payer().sk)
+}
+
+/// A throwaway Ironwood-only address.
+pub fn throwaway_address() -> UnifiedAddress {
+    escrow_address(&throwaway_fvk())
+}
+
+/// A NEAR RPC that returns a fixture file and counts its calls.
+pub struct FixtureRpc {
+    pub payload: Vec<u8>,
+    pub calls: std::cell::Cell<usize>,
+}
+
+impl FixtureRpc {
+    pub fn new(name: &str) -> Self {
+        FixtureRpc {
+            payload: fixture_bytes(name),
+            calls: std::cell::Cell::new(0),
+        }
+    }
+}
+
+impl ironwood_intent_escrow::attest::NearRpc for FixtureRpc {
+    fn url(&self) -> &str {
+        "fixture://near"
+    }
+    fn tx(&self, _hash: &str, _sender: &str) -> Result<Vec<u8>, ironwood_intent_escrow::Error> {
+        self.calls.set(self.calls.get() + 1);
+        Ok(self.payload.clone())
+    }
+}
+
+pub fn fixture_bytes(name: &str) -> Vec<u8> {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name);
+    std::fs::read(path).unwrap()
+}
+
+/// The quote the NEAR fixtures pay.
+pub fn fixture_quote() -> ironwood_intent_escrow::quote::Quote {
+    use ironwood_intent_escrow::quote::{Quote, QuoteId};
+    Quote {
+        id: QuoteId::from_hex("3f9a1c7e5b2d4086a1f3c5e7092b4d6f8a0c2e4f6183a5c7e9fb1d3f5a7c9e0b")
+            .unwrap(),
+        destination_account: "payer-ironwood.testnet".into(),
+        asset: "wrap.testnet".into(),
+        amount: 250_000_000_000_000_000_000_000,
+        expiry_unix: 1_792_800_000,
+    }
+}
+
+/// The pointer the NEAR fixtures answer.
+pub fn fixture_pointer() -> ironwood_intent_escrow::attest::NearTxPointer {
+    ironwood_intent_escrow::attest::NearTxPointer {
+        hash: "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw".into(),
+        sender: "solver-ironwood.testnet".into(),
+    }
+}

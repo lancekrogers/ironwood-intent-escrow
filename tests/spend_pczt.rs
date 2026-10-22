@@ -4,10 +4,11 @@
 //! The escrow note is synthetic, alone in a one-leaf tree, and owned by a
 //! `keygen` escrow key, so the FROST shares in the end-to-end test are real.
 
-mod pczt {
-    use std::path::Path;
+mod common;
 
-    use incrementalmerkletree::{Hashable, Level};
+mod pczt {
+    use crate::common::{escrow_note, throwaway_address, throwaway_fvk, ESCROW_VALUE};
+
     use ironwood_intent_escrow::address::escrow_address;
     use ironwood_intent_escrow::cosign::SigningPackage;
     use ironwood_intent_escrow::frost::{aggregate, keygen, round1, round2, ShareFile};
@@ -19,10 +20,7 @@ mod pczt {
     use ironwood_intent_escrow::quote::QuoteId;
     use ironwood_intent_escrow::view::CheckerView;
     use ironwood_intent_escrow::Error;
-    use orchard::keys::{FullViewingKey, OutgoingViewingKey, Scope, SpendingKey};
-    use orchard::note::{NoteVersion, RandomSeed, Rho};
-    use orchard::tree::{MerkleHashOrchard, MerklePath};
-    use orchard::value::NoteValue;
+    use orchard::keys::{OutgoingViewingKey, Scope};
     use pasta_curves::group::ff::PrimeField;
     use pczt::roles::creator::Creator;
     use pczt::roles::io_finalizer::IoFinalizer;
@@ -32,67 +30,16 @@ mod pczt {
     use pczt::roles::verifier::Verifier;
     use rand::rand_core::UnwrapErr;
     use rand::rngs::{StdRng, SysRng};
-    use rand::{SeedableRng, TryRng};
+    use rand::SeedableRng;
     use std::convert::Infallible;
     use zcash_keys::address::UnifiedAddress;
     use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
     use zcash_primitives::transaction::fees::zip317::FeeRule;
-    use zcash_protocol::consensus::{BlockHeight, Network};
+    use zcash_protocol::consensus::Network;
     use zcash_protocol::value::Zatoshis;
     use zcash_transparent::address::TransparentAddress;
 
-    const ESCROW_VALUE: u64 = 3_990_000;
     const NETWORK: Network = Network::TestNetwork;
-
-    fn random_bytes() -> [u8; 32] {
-        let mut bytes = [0u8; 32];
-        SysRng.try_fill_bytes(&mut bytes).unwrap();
-        bytes
-    }
-
-    /// An escrow key in `dir`, and the escrow note it owns.
-    fn escrow_note(dir: &Path) -> NoteInputs {
-        let fvk = keygen(dir).unwrap();
-        let rho = loop {
-            if let Some(rho) = Option::from(Rho::from_bytes(&random_bytes())) {
-                break rho;
-            }
-        };
-        let rseed = loop {
-            if let Some(r) = Option::from(RandomSeed::from_bytes(random_bytes(), &rho)) {
-                break r;
-            }
-        };
-        let note = orchard::Note::from_parts(
-            fvk.address_at(0u32, Scope::External),
-            NoteValue::from_raw(ESCROW_VALUE),
-            rho,
-            rseed,
-            NoteVersion::V3,
-        )
-        .unwrap();
-        let auth_path: [MerkleHashOrchard; 32] =
-            std::array::from_fn(|l| MerkleHashOrchard::empty_root(Level::from(l as u8)));
-        let merkle_path = MerklePath::from_parts(0, auth_path);
-        let anchor = merkle_path.root(note.commitment().into());
-        NoteInputs {
-            fvk,
-            note,
-            merkle_path,
-            anchor,
-            target_height: BlockHeight::from_u32(4_530_600),
-        }
-    }
-
-    /// A throwaway Ironwood-only address standing in for the solver.
-    fn solver_address() -> UnifiedAddress {
-        let sk = loop {
-            if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(random_bytes())) {
-                break sk;
-            }
-        };
-        escrow_address(&FullViewingKey::from(&sk))
-    }
 
     /// A release encrypts its outputs to the escrow's own OVK.
     fn release_ovk(inputs: &NoteInputs) -> OutgoingViewingKey {
@@ -113,7 +60,7 @@ mod pczt {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
         let short = vec![SpendOutput {
-            address: solver_address(),
+            address: throwaway_address(),
             value: Zatoshis::const_from_u64(1_000),
         }];
         let err = spend_pczt(
@@ -132,7 +79,7 @@ mod pczt {
     fn pczt_checker_view_refuses_a_swapped_quote_id() {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
-        let outputs = one_output(&inputs, solver_address());
+        let outputs = one_output(&inputs, throwaway_address());
         let spend = spend_pczt(
             NETWORK,
             &inputs,
@@ -156,7 +103,7 @@ mod pczt {
         let dir = tempfile::tempdir().unwrap();
         let other_dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
-        let outputs = one_output(&inputs, solver_address());
+        let outputs = one_output(&inputs, throwaway_address());
         let spend = spend_pczt(
             NETWORK,
             &inputs,
@@ -175,7 +122,7 @@ mod pczt {
     fn pczt_checker_view_refuses_a_value_it_cannot_verify() {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
-        let outputs = one_output(&inputs, solver_address());
+        let outputs = one_output(&inputs, throwaway_address());
         let spend = spend_pczt(
             NETWORK,
             &inputs,
@@ -200,7 +147,7 @@ mod pczt {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
         let quote_id = QuoteId::random().unwrap();
-        let solver = *solver_address().orchard().unwrap();
+        let solver = *throwaway_address().orchard().unwrap();
         let assemble = |ironwood_value: u64| {
             let mut builder = Builder::new(
                 NETWORK,
@@ -260,11 +207,7 @@ mod pczt {
     fn pczt_refund_does_not_open_under_the_escrow_ovk() {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
-        let refund_fvk = FullViewingKey::from(&loop {
-            if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(random_bytes())) {
-                break sk;
-            }
-        });
+        let refund_fvk = throwaway_fvk();
         let refund_ovk = refund_fvk.to_ovk(Scope::External);
         let outputs = one_output(&inputs, escrow_address(&refund_fvk));
         let spend = spend_pczt(
@@ -289,7 +232,7 @@ mod pczt {
     fn pczt_refuses_the_zero_ovk() {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
-        let outputs = one_output(&inputs, solver_address());
+        let outputs = one_output(&inputs, throwaway_address());
         let err = spend_pczt(
             NETWORK,
             &inputs,
@@ -307,7 +250,7 @@ mod pczt {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
         let quote_id = QuoteId::random().unwrap();
-        let outputs = one_output(&inputs, solver_address());
+        let outputs = one_output(&inputs, throwaway_address());
         let spend =
             spend_pczt(NETWORK, &inputs, &outputs, &quote_id, &release_ovk(&inputs)).unwrap();
         let bytes = spend.pczt.serialize().unwrap();
@@ -331,7 +274,7 @@ mod pczt {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
         let quote_id = QuoteId::random().unwrap();
-        let outputs = one_output(&inputs, solver_address());
+        let outputs = one_output(&inputs, throwaway_address());
         let sighash = |seed: u8| {
             let mut rng = StdRng::from_seed([seed; 32]);
             let spend = spend_pczt_with_rng(
@@ -368,7 +311,7 @@ mod pczt {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
         let quote_id = QuoteId::random().unwrap();
-        let solver = solver_address();
+        let solver = throwaway_address();
         let outputs = one_output(&inputs, solver.clone());
         let spend =
             spend_pczt(NETWORK, &inputs, &outputs, &quote_id, &release_ovk(&inputs)).unwrap();
@@ -402,7 +345,7 @@ mod pczt {
         let dir = tempfile::tempdir().unwrap();
         let inputs = escrow_note(dir.path());
         let quote_id = QuoteId::random().unwrap();
-        let outputs = one_output(&inputs, solver_address());
+        let outputs = one_output(&inputs, throwaway_address());
         let spend =
             spend_pczt(NETWORK, &inputs, &outputs, &quote_id, &release_ovk(&inputs)).unwrap();
         let view = CheckerView::new(&spend.pczt, &inputs.fvk, &release_ovk(&inputs)).unwrap();

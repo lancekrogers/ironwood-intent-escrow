@@ -14,6 +14,7 @@ pub mod frost;
 pub mod light;
 pub mod near;
 pub mod note;
+pub mod policy;
 pub mod quote;
 pub mod view;
 pub mod wallet;
