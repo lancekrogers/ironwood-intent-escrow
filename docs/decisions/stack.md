@@ -38,22 +38,36 @@ Evidence, each read on 2026-10-22:
 
 Trusted dealer, in `keygen`:
 
-1. Generate a normal Orchard spending key `sk` in memory with
-   `orchard::keys::SpendingKey::random`.
+1. Generate a normal Orchard spending key `sk` in memory: fill 32 bytes
+   from the OS RNG and retry `orchard::keys::SpendingKey::from_bytes` until
+   it returns `Some`. That is the body of `SpendingKey::random`, which is
+   `pub(crate)` in orchard 0.16.0.
 2. Derive `ask`, `ak`, `nk`, and `rivk` from it the way every existing wallet
    does (`SpendAuthorizingKey::from`, `FullViewingKey::from`). This is the
    `use_qsk = false` path. ZIP 2005 calls it the legacy derivation. It is not
    quantum recoverable, and the decision file says so rather than pretending.
 3. Split `ask` into three shares, threshold two, with
-   `frost_core::keys::split` over the RedPallas spend-auth ciphersuite, using
-   `ask`'s 32 bytes as the `SigningKey`. The dealer's secret polynomial lives
-   only inside that call.
+   `frost_core::keys::split` over the RedPallas spend-auth ciphersuite
+   (`reddsa::frost::redpallas::PallasBlake2b512`), using `ask`'s 32 bytes as
+   the `SigningKey`. orchard 0.16.0 gives `SpendAuthorizingKey` no byte
+   accessor, so `keygen` reads the bytes as
+   `SpendAuthorizingKey::from(&sk).randomize(&pallas::Scalar::ZERO).to_bytes()`
+   and passes them to `SigningKey::deserialize`. Adding zero leaves the
+   scalar unchanged, and `From<&SpendingKey>` has already negated `ask` so
+   that `ak` has ỹ = 0. `pallas` is `pasta_curves` 0.6.1, already in the
+   lockfile through `orchard`; sequence 02 adds it as a direct dependency.
+   The dealer's secret polynomial lives only inside that call.
 4. Write `payer.key`, `solver.key`, `deadline.key` (one `KeyPackage` each)
    and `escrow.fvk` (the `FullViewingKey` bytes: `ak`, `nk`, `rivk`). Drop
    `sk`, `ask`, and the polynomial. Nothing else is written.
 
 The FROST verifying key equals `ak` by construction, so the Ironwood address
 derived from `escrow.fvk` is the address the three shares can spend from.
+Checked on 2026-10-22 with a scratch build against these pins: for 64
+random keys, the group verifying key from `split` serialized to the same 32
+bytes as `ak` in `FullViewingKey::to_bytes`, and every `KeyPackage` carried
+it. The ciphersuite's even-y step changes nothing, because `ak` already has
+ỹ = 0.
 
 `keygen` keeps the `FullViewingKey` return type so that the distributed path
 can replace step 1 through 3 without changing callers once zips#895 lands in
@@ -68,14 +82,14 @@ ZIP 2005 and the `orchard` crate implements `use_qsk`.
 | `reddsa` | 0.5.2, feature `frost` | 2026-05-22 | the RedPallas spend-auth ciphersuite `reddsa::frost::redpallas` |
 | `orchard` | 0.16.0 | 2026-09-30 | keys, notes, the Halo 2 circuit, bundle types that Ironwood reuses |
 | `zcash_primitives` | 0.31.0 | 2026-10-21 | v6 transactions, `Builder::{add_ironwood_spend, add_ironwood_output}` |
-| `pczt` | 0.10.0 | 2026-10-21 | ZIP 374 PCZT with an Ironwood bundle, `Prover::create_ironwood_proof`, `sign_ironwood` |
+| `pczt` | 0.10.0 | 2026-10-21 | ZIP 374 PCZT with an Ironwood bundle, `Prover::create_ironwood_proof`, `Signer::apply_ironwood_signature` |
 | `zcash_client_backend` | 0.25.0 | 2026-10-21 | Ironwood scanning, `ShieldedPool::Ironwood`, light-client gRPC |
 | `zcash_client_sqlite` | 0.23.0 | 2026-10-21 | the payer wallet store |
 | `zcash_keys` | 0.17.0 | 2026-10-21 | unified addresses and unified keys |
 | `zcash_address` | 0.14.0 | 2026-10-21 | address encoding, `utest1` on testnet |
 | `zcash_protocol` | 0.11.0 | 2026-10-21 | `BranchId::Nu6_3`, `Nu7`, network parameters |
 
-Three facts the versions force:
+Four facts the versions force:
 
 - `reddsa` 0.6.x dropped the `frost` feature (0.6.1 features: alloc,
   default, internal, nightly, serde, std, zeroize). conradoplg said on
@@ -96,6 +110,12 @@ Three facts the versions force:
   `#[allow(deprecated)]` and builds `RandomizedParams::from_randomizer` for
   `aggregate`. conradoplg wrote on 2026-09-21 that an external randomizer
   mechanism will stay because Zcash requires it.
+- `pczt`'s `Signer::sign_ironwood` takes an `&SpendAuthorizingKey`, which no
+  holder has. The coordinator applies the aggregated signature with
+  `Signer::apply_ironwood_signature(index, Signature<SpendAuth>)` instead.
+  The randomizer is the escrow spend's `alpha`, read with
+  `orchard::pczt::Spend::alpha()` and passed to FROST as
+  `frost_rerandomized::Randomizer::deserialize` of its 32 bytes.
 
 The `orchard` crate's `unstable-frost` feature only widens visibility of two
 items in `keys.rs`. It is not a FROST implementation. Not enabled.
@@ -115,16 +135,21 @@ No parameter files. ZIP 2005 changes the note construction and "would not
 require any change to the Orchard-protocol (or proposed OrchardZSA-protocol)
 circuits for the time being." Ironwood proofs are Orchard Halo 2 proofs. The
 `orchard` crate builds the proving key in process with
-`orchard::circuit::ProvingKey::build()` under its `circuit` feature. There is
-nothing to download, and a judge needs no files beyond the crate.
+`orchard::circuit::ProvingKey::build(OrchardCircuitVersion::PostNu6_3)` under
+its `circuit` feature. Ironwood bundles are protocol version 3, and
+`Bundle::circuit_version` maps that to `PostNu6_3`, the circuit that enforces
+the `disableCrossAddress` input. A key for another version fails at proving.
+There is nothing to download, and a judge needs no files beyond the crate.
 
 `params/` stays in `.gitignore` as a guard, and the Sapling Groth16 files
 (`sapling-spend.params`, `sapling-output.params`) are not needed because no
 Sapling bundle is built.
 
-Build time of the proving key on this machine: not yet measured. Sequence
-03 measures it the first time `fund_escrow` builds a proof and records it in
-its testing task.
+Build time of the `PostNu6_3` proving key on this machine (Apple M4 Max, 16
+cores), measured 2026-10-22 with the pinned `orchard`: 0.9 s in a release
+build and 11.9 s in a debug build. `cargo test` runs the debug build, so a
+test that proves pays about 12 s once per process. Build the key once and
+share it, the way `zcash_primitives`' `cached_orchard_proving_key` does.
 
 ## Network and activation
 
@@ -157,6 +182,11 @@ local node.
   wallet depends on it. Zaino 0.10.1 (2026-09-29) reports the `ironwood` pool
   in `getblockchaininfo` and writes the Ironwood `finalRoot` in
   `z_gettreestate`, so a Zaino-backed endpoint is the expected answer.
+  Both endpoints are TLS on 443. `Cargo.toml` enables only
+  `lightwalletd-tonic`, which has no transport and no TLS. Sequence 03 adds
+  `lightwalletd-tonic-transport` and `lightwalletd-tonic-tls-webpki-roots`,
+  features of the same pinned `zcash_client_backend`, and a tokio runtime
+  when the wallet first connects.
 - Full node, if a local one is ever needed: Zebra v7.0.0 (2026-10-22),
   which carries the NU7 heights above.
 - Wallet: Zallet v0.1.0-beta.3 (2026-08-26) has PCZT JSON-RPC methods and
@@ -191,5 +221,5 @@ local node.
 
 ## Not pinned
 
-The testnet light server choice and the proving-key build time are left to
-sequence 03, where they are measured rather than assumed.
+The testnet light server choice is left to sequence 03, where it is
+measured rather than assumed.
