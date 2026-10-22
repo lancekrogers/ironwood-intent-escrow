@@ -1,0 +1,27 @@
+[package]
+name = "ironwood-intent-escrow"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A 2-of-3 FROST escrow on Zcash Ironwood that fills on NEAR testnet or refunds to a fresh shielded address"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# FROST: docs/decisions/stack.md pins these. reddsa 0.5.2 is the last version
+# with the RedPallas FROST ciphersuite; orchard pulls reddsa 0.6 beside it.
+frost-core = "3.0.0"
+frost-rerandomized = "3.0.0"
+reddsa = { version = "0.5.2", features = ["frost"] }
+
+# librustzcash, Ironwood-capable releases of 2026-10-21.
+orchard = "0.16.0"
+zcash_primitives = "0.31.0"
+pczt = { version = "0.10.0", features = ["orchard", "prover", "signer", "io-finalizer", "tx-extractor"] }
+zcash_client_backend = { version = "0.25.0", features = ["orchard", "lightwalletd-tonic", "pczt"] }
+zcash_client_sqlite = { version = "0.23.0", features = ["orchard"] }
+zcash_keys = { version = "0.17.0", features = ["orchard"] }
+zcash_address = "0.14.0"
+zcash_protocol = "0.11.0"
+
+[dev-dependencies]
+tempfile = "3"
