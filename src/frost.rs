@@ -9,8 +9,7 @@
 //! the distributed path can replace its body without changing callers.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
 
 use frost_rerandomized::RandomizedParams;
@@ -29,6 +28,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::cosign::{Commitments, Share, SignerId, SigningPackage, SpendRandomizer};
 use crate::error::Error;
+use crate::files::write_new;
 
 /// Signatures needed to spend: two of the three holders.
 pub const THRESHOLD: u16 = 2;
@@ -299,15 +299,4 @@ fn split_ask(
         .into_iter()
         .map(|(id, share)| Ok((SignerId::from_identifier(id)?, KeyPackage::try_from(share)?)))
         .collect()
-}
-
-/// Writes a new file, refusing to replace one. Key files are owner-only.
-fn write_new(path: &Path, bytes: &[u8]) -> Result<(), Error> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options.open(path).map_err(|e| Error::io(path, e))?;
-    file.write_all(bytes).map_err(|e| Error::io(path, e))?;
-    file.sync_all().map_err(|e| Error::io(path, e))
 }

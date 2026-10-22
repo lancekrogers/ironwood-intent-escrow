@@ -54,6 +54,18 @@ pub enum Error {
     #[error("address_decode: {0}")]
     AddressDecode(String),
 
+    /// The payer wallet holds no Ironwood note that covers the amount.
+    #[error("no_spendable_note: the payer wallet has no Ironwood note that covers the amount")]
+    NoSpendableNote,
+
+    /// The wallet database failed.
+    #[error("wallet: {0}")]
+    Wallet(String),
+
+    /// A light server could not be reached or returned unusable data.
+    #[error("light_server: {0}")]
+    LightServer(String),
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),
@@ -70,14 +82,16 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn io(path: impl Into<PathBuf>, source: std::io::Error) -> Self {
+    /// An I/O error on `path`.
+    pub fn io(path: impl Into<PathBuf>, source: std::io::Error) -> Self {
         Error::Io {
             path: path.into(),
             source,
         }
     }
 
-    pub(crate) fn key_file(path: impl Into<PathBuf>, reason: impl Into<String>) -> Self {
+    /// A key or wallet file at `path` that is wrong for `reason`.
+    pub fn key_file(path: impl Into<PathBuf>, reason: impl Into<String>) -> Self {
         Error::InvalidKeyFile {
             path: path.into(),
             reason: reason.into(),

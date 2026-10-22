@@ -6,6 +6,9 @@
 pub mod address;
 pub mod cosign;
 pub mod error;
+mod files;
 pub mod frost;
+pub mod light;
+pub mod wallet;
 
 pub use error::Error;

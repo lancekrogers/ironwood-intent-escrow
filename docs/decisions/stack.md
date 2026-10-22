@@ -126,8 +126,16 @@ One feature pairing the lockfile does not catch: `zcash_client_backend`'s
 missing transparent trait items, non-exhaustive `Recipient` matches) unless
 its own `transparent-inputs` feature is on too. `Cargo.toml` enables it. It
 compiles the wallet's transparent code; the checker still rejects any
-transparent output, and the payer wallet never derives a transparent
-receiver.
+transparent output.
+
+Measured on the testnet payer wallet, 2026-10-22: with `transparent-inputs`
+on, `zcash_client_sqlite` pre-derives transparent gap-limit addresses for
+each account in its own `addresses` table: 10 external, 5 internal, and 10
+ephemeral. It also marks one default address per account as exposed in its
+bookkeeping. None of them leaves the wallet. `payer_address` derives the
+faucet address with the transparent receiver omitted, and
+`fresh_refund_address` requests an Orchard receiver only. Both refuse an
+address with a transparent receiver.
 
 ## Prover
 
@@ -182,11 +190,26 @@ local node.
   wallet depends on it. Zaino 0.10.1 (2026-09-29) reports the `ironwood` pool
   in `getblockchaininfo` and writes the Ironwood `finalRoot` in
   `z_gettreestate`, so a Zaino-backed endpoint is the expected answer.
-  Both endpoints are TLS on 443. `Cargo.toml` enables only
-  `lightwalletd-tonic`, which has no transport and no TLS. Sequence 03 adds
+  Both endpoints are TLS on 443.
+- Measured by sequence 03 on 2026-10-22 with `cargo run --bin
+  payer_wallet`, which calls `GetLatestBlock` and `GetTreeState` over TLS
+  and does nothing else:
+  - `testnet.zec.rocks:443` answered gRPC at tip 4,530,274 with a
+    non-empty Ironwood tree in `TreeState.ironwood_tree`. It is the light
+    server the payer wallet uses.
+  - `zaino.testnet.unsafe.zec.rocks:443` answered HTTP 503 Service
+    Unavailable, not gRPC.
+  - Whether `testnet.zec.rocks` serves Ironwood actions in compact blocks is
+    not yet measured, because no scan has run. The first sync after funding
+    measures it.
+- TLS: `Cargo.toml` turns on `zcash_client_backend`'s
   `lightwalletd-tonic-transport` and `lightwalletd-tonic-tls-webpki-roots`,
-  features of the same pinned `zcash_client_backend`, and a tokio runtime
-  when the wallet first connects.
+  plus `tonic` 0.14 with `tls-ring` and `tokio`. ring is the rustls provider
+  because aws-lc-rs needs cmake. The crates this added to `Cargo.lock` are
+  all permissive: ring (Apache-2.0 AND ISC), rustls (Apache-2.0 OR ISC OR
+  MIT), rustls-webpki (ISC), webpki-roots (CDLA-Permissive-2.0), and
+  tokio-rustls, h2, tower, mio, and the rest (MIT or Apache-2.0). No existing
+  package changed version.
 - Full node, if a local one is ever needed: Zebra v7.0.0 (2026-10-22),
   which carries the NU7 heights above.
 - Wallet: Zallet v0.1.0-beta.3 (2026-08-26) has PCZT JSON-RPC methods and
@@ -218,8 +241,27 @@ local node.
   `src/wallet.rs` (sequence 03), holding one unified spending key for the
   funding note and a second for refund addresses. No external wallet
   application holds payer funds.
+- Payer wallet on testnet, created 2026-10-22 by `cargo run --bin
+  payer_wallet -- ~/.ironwood-intent-escrow/testnet/payer`. The directory is
+  outside every repository, mode 0700. It holds `payer_wallet.key`,
+  `refund.key`, `payer_wallet.sqlite`, and `birthday.json`, each mode 0600.
+  The birthday is height 4,530,275, taken from the `testnet.zec.rocks` tree
+  state at 4,530,274.
+- Faucet payment: pending. The address to pay is in `runs/payer_address.txt`.
+  It has an Orchard receiver, which Ironwood shares, and a Sapling receiver,
+  and no transparent receiver. Pay it from
+  https://faucet.testnet.valargroup.dev or https://zcashfaucet.jinolabs.xyz.
+  `PayerWallet::spendable_note` reads only the Ironwood pool, and it returns
+  `no_spendable_note` until a sync after the payment finds the note.
+- Open for that first sync. If a faucet pays the Sapling receiver, the
+  self-transfer above builds a Sapling spend, which needs the Groth16
+  parameters this file's Prover section says are not needed. If it pays the
+  Orchard pool rather than Ironwood, the note needs an Orchard-to-Ironwood
+  move. The funding account holds Sapling and Orchard keys, and the wallet
+  database tracks the Sapling, Orchard, and Ironwood pools, so the sync
+  shows which case occurred before either path is built.
 
 ## Not pinned
 
-The testnet light server choice is left to sequence 03, where it is
-measured rather than assumed.
+The light server for tree state is `testnet.zec.rocks:443`, measured
+above. Its compact-block support for Ironwood is measured at the first sync.
