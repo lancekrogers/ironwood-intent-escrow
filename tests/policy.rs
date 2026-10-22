@@ -1,113 +1,27 @@
-//! The policy signers. Run with `cargo test policy`; every test sits in
-//! `mod policy` so that filter finds it.
+//! The release side of the policy signers. Run with `cargo test policy`;
+//! every test sits in `mod policy` so that filter finds it.
 //!
 //! The escrow key comes from `keygen`, the escrow note is synthetic, and the
 //! NEAR payment is the fixture `attest` reads, so the quote here is the one
-//! the fixtures pay.
+//! the fixtures pay. The refund side is in `tests/policy_refund.rs`.
 
 mod common;
 
 mod policy {
-    use ironwood_intent_escrow::attest::Banned;
     use ironwood_intent_escrow::cosign::SigningPackage;
-    use ironwood_intent_escrow::frost::{
-        aggregate, ak_bytes, round1, round2, verify_spend_auth, ShareFile,
-    };
-    use ironwood_intent_escrow::note::{
-        escrow_spend_fee, spend_pczt, EscrowSpend, NoteInputs, SpendOutput,
-    };
+    use ironwood_intent_escrow::frost::{aggregate, ak_bytes, round1, round2, verify_spend_auth};
     use ironwood_intent_escrow::policy::{
-        build_refund, deadline_sign, payer_refund, payer_release, refund_ovk, release_ovk,
-        signing_package, DeadlineSigner, PayerSigner,
+        build_refund, deadline_sign, payer_release, release_ovk, signing_package, solver_release,
+        DeadlineSigner, PayerSigner, MAX_ESCROW_FEE,
     };
-    use ironwood_intent_escrow::quote::Quote;
-    use ironwood_intent_escrow::view::{verify_package, PackageFacts};
-    use ironwood_intent_escrow::wallet::PayerWallet;
+    use ironwood_intent_escrow::view::verify_package;
     use ironwood_intent_escrow::Error;
-    use orchard::keys::FullViewingKey;
-    use tempfile::TempDir;
-    use zcash_keys::address::UnifiedAddress;
-    use zcash_protocol::consensus::Network;
     use zcash_protocol::value::Zatoshis;
 
+    use crate::common::policy::*;
     use crate::common::{
-        escrow_note, fixture_pointer, fixture_quote, offline_wallet, throwaway_address, FixtureRpc,
-        ESCROW_VALUE,
+        fixture_pointer, fixture_quote, throwaway_address, FixtureRpc, ESCROW_VALUE,
     };
-
-    const NETWORK: Network = Network::TestNetwork;
-
-    struct Escrow {
-        dir: TempDir,
-        _wallet_dir: TempDir,
-        inputs: NoteInputs,
-        solver: UnifiedAddress,
-        wallet: PayerWallet,
-        refund_fvk: FullViewingKey,
-    }
-
-    fn escrow() -> Escrow {
-        let dir = tempfile::tempdir().unwrap();
-        let wallet_dir = tempfile::tempdir().unwrap();
-        let inputs = escrow_note(dir.path());
-        let wallet = offline_wallet(wallet_dir.path());
-        let refund_fvk = wallet.refund_fvk().unwrap();
-        Escrow {
-            dir,
-            _wallet_dir: wallet_dir,
-            inputs,
-            solver: throwaway_address(),
-            wallet,
-            refund_fvk,
-        }
-    }
-
-    fn share(e: &Escrow, name: &str) -> ShareFile {
-        ShareFile::read(&e.dir.path().join(name)).unwrap()
-    }
-
-    fn payer(e: &Escrow) -> PayerSigner {
-        PayerSigner::new(
-            share(e, "payer.key"),
-            e.inputs.fvk.clone(),
-            e.refund_fvk.clone(),
-            &e.solver,
-        )
-        .unwrap()
-    }
-
-    fn deadline(e: &Escrow) -> DeadlineSigner {
-        DeadlineSigner::new(
-            share(e, "deadline.key"),
-            e.inputs.fvk.clone(),
-            e.refund_fvk.clone(),
-            &e.solver,
-        )
-        .unwrap()
-    }
-
-    /// The whole escrow note, less the fee, to `to`, under the escrow OVK.
-    fn release_to(e: &Escrow, to: &UnifiedAddress, quote: &Quote) -> (EscrowSpend, PackageFacts) {
-        let fee = escrow_spend_fee(NETWORK, &e.inputs, 1).unwrap().into_u64();
-        let outputs = [SpendOutput {
-            address: to.clone(),
-            value: Zatoshis::const_from_u64(ESCROW_VALUE - fee),
-        }];
-        let spend = spend_pczt(
-            NETWORK,
-            &e.inputs,
-            &outputs,
-            &quote.id,
-            &release_ovk(&e.inputs.fvk),
-        )
-        .unwrap();
-        let facts = verify_package(&spend.pczt, &e.inputs.fvk).unwrap();
-        (spend, facts)
-    }
-
-    fn banned() -> Banned {
-        Banned::new().zatoshis(ESCROW_VALUE)
-    }
 
     #[test]
     fn policy_refuses_a_share_of_another_role() {
@@ -287,153 +201,52 @@ mod policy {
         .unwrap();
     }
 
-    /// A quote whose expiry is `expiry`, for the refund tests.
-    fn quote_expiring(expiry: u64) -> Quote {
-        Quote::new(
-            "payer-ironwood.testnet",
-            "wrap.testnet",
-            250_000_000_000_000_000_000_000,
-            expiry,
-        )
-        .unwrap()
-    }
-
-    const EXPIRY: u64 = 1_792_800_000;
-
     #[test]
-    fn build_refund_refuses_before_expiry() {
+    fn solver_refuses_a_refund_shaped_package() {
         let mut e = escrow();
         let quote = quote_expiring(EXPIRY);
-        let err = build_refund(&quote, &e.inputs, &mut e.wallet, EXPIRY - 1)
-            .err()
-            .unwrap();
-        assert!(matches!(err, Error::NotExpired { .. }), "{err}");
-    }
-
-    #[test]
-    fn refund_address_is_not_in_the_quote() {
-        let mut e = escrow();
-        let quote = quote_expiring(EXPIRY);
-        let quote_file = e.dir.path().join("quote.json");
-        std::fs::write(&quote_file, quote.to_json().unwrap()).unwrap();
-        let before = std::fs::read(&quote_file).unwrap();
-
+        // The payer, as coordinator, builds a refund to itself and asks the
+        // solver to co-sign it in place of the release.
         let refund = build_refund(&quote, &e.inputs, &mut e.wallet, EXPIRY).unwrap();
+        let facts = verify_package(&refund.pczt, &e.inputs.fvk).unwrap();
+        let (nonces, solver_commitments) = round1(&share(&e, "solver.key"));
+        let (_, payer_commitments) = round1(&share(&e, "payer.key"));
+        let package = signing_package(&facts, vec![payer_commitments, solver_commitments]);
+        let err = solver_release(&solver(&e), &quote, &refund.pczt, nonces, &package).unwrap_err();
+        assert!(matches!(err, Error::NotARelease(_)), "{err}");
 
-        let after = std::fs::read(&quote_file).unwrap();
-        assert_eq!(before, after, "the quote file changed");
-        let view = ironwood_intent_escrow::view::CheckerView::new(
-            &refund.pczt,
-            &e.inputs.fvk,
-            &refund_ovk(&e.refund_fvk),
-        )
-        .unwrap();
-        let address = view.outputs[0].address;
-        assert!(e.refund_fvk.scope_for_address(&address).is_some());
-        let encoded = escrow_address_of(address).encode(&NETWORK);
-        let raw = hex::encode(address.to_raw_address_bytes());
-        for needle in [encoded.as_bytes(), raw.as_bytes()] {
-            assert!(!after.windows(needle.len()).any(|w| w == needle));
-        }
-    }
-
-    fn escrow_address_of(address: orchard::Address) -> UnifiedAddress {
-        UnifiedAddress::from_receivers(Some(address), None, None, None, None).unwrap()
+        // A release under the escrow key that pays someone else is refused too.
+        let (other, facts) = release_to(&e, &throwaway_address(), &quote);
+        let (nonces, solver_commitments) = round1(&share(&e, "solver.key"));
+        let (_, payer_commitments) = round1(&share(&e, "payer.key"));
+        let package = signing_package(&facts, vec![payer_commitments, solver_commitments]);
+        let err = solver_release(&solver(&e), &quote, &other.pczt, nonces, &package).unwrap_err();
+        assert!(matches!(err, Error::NotARelease(_)), "{err}");
     }
 
     #[test]
-    fn deadline_refuses_a_refund_the_refund_key_does_not_detect() {
+    fn solver_and_payer_sign_the_release() {
         let e = escrow();
-        let quote = quote_expiring(EXPIRY);
-        let fee = escrow_spend_fee(NETWORK, &e.inputs, 1).unwrap().into_u64();
-        let stranger = [SpendOutput {
-            address: throwaway_address(),
-            value: Zatoshis::const_from_u64(ESCROW_VALUE - fee),
-        }];
-        let spend = spend_pczt(
-            NETWORK,
-            &e.inputs,
-            &stranger,
-            &quote.id,
-            &refund_ovk(&e.refund_fvk),
-        )
-        .unwrap();
-        let facts = verify_package(&spend.pczt, &e.inputs.fvk).unwrap();
-        let (nonces, deadline_commitments) = round1(&share(&e, "deadline.key"));
-        let (_, payer_commitments) = round1(&share(&e, "payer.key"));
-        let package = signing_package(&facts, vec![payer_commitments, deadline_commitments]);
-        let err = deadline_sign(&deadline(&e), &quote, &spend.pczt, nonces, &package, EXPIRY)
-            .unwrap_err();
-        assert!(matches!(err, Error::NotARefund(_)), "{err}");
-    }
-
-    #[test]
-    fn deadline_refuses_a_refund_for_another_quote() {
-        let mut e = escrow();
-        let quote = quote_expiring(EXPIRY);
-        let refund = build_refund(&quote, &e.inputs, &mut e.wallet, EXPIRY).unwrap();
-        let facts = verify_package(&refund.pczt, &e.inputs.fvk).unwrap();
-        let (nonces, deadline_commitments) = round1(&share(&e, "deadline.key"));
-        let (_, payer_commitments) = round1(&share(&e, "payer.key"));
-        let package = signing_package(&facts, vec![payer_commitments, deadline_commitments]);
-        let other = quote_expiring(EXPIRY);
-        let err = deadline_sign(
-            &deadline(&e),
-            &other,
-            &refund.pczt,
-            nonces,
-            &package,
-            EXPIRY,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::NotARefund(_)), "{err}");
-    }
-
-    #[test]
-    fn deadline_signs_only_after_expiry() {
-        let mut e = escrow();
-        let quote = quote_expiring(EXPIRY);
-        let refund = build_refund(&quote, &e.inputs, &mut e.wallet, EXPIRY).unwrap();
-        let facts = verify_package(&refund.pczt, &e.inputs.fvk).unwrap();
-        let deadline_file = share(&e, "deadline.key");
-        let payer_file = share(&e, "payer.key");
-
-        let (early_nonces, early_deadline) = round1(&deadline_file);
-        let (_, early_payer) = round1(&payer_file);
-        let early = signing_package(&facts, vec![early_payer, early_deadline]);
-        let err = deadline_sign(
-            &deadline(&e),
-            &quote,
-            &refund.pczt,
-            early_nonces,
-            &early,
-            EXPIRY - 1,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::NotExpired { .. }), "{err}");
-
-        let (deadline_nonces, deadline_commitments) = round1(&deadline_file);
-        let (payer_nonces, payer_commitments) = round1(&payer_file);
-        let package = signing_package(&facts, vec![payer_commitments, deadline_commitments]);
-        let deadline_share = deadline_sign(
-            &deadline(&e),
-            &quote,
-            &refund.pczt,
-            deadline_nonces,
-            &package,
-            EXPIRY,
-        )
-        .unwrap();
-        let payer_share = payer_refund(
+        let quote = fixture_quote();
+        let (spend, facts) = release_to(&e, &e.solver, &quote);
+        let (payer_nonces, payer_commitments) = round1(&share(&e, "payer.key"));
+        let (solver_nonces, solver_commitments) = round1(&share(&e, "solver.key"));
+        let package = signing_package(&facts, vec![payer_commitments, solver_commitments]);
+        let rpc = FixtureRpc::new("near_ok.json");
+        let (payer_share, _) = payer_release(
             &payer(&e),
             &quote,
-            &refund.pczt,
+            &spend.pczt,
+            &fixture_pointer(),
+            &banned(),
+            &rpc,
             payer_nonces,
             &package,
-            EXPIRY,
         )
         .unwrap();
-        let signature = aggregate(&package, &[payer_share, deadline_share], &e.inputs.fvk).unwrap();
+        let solver_share =
+            solver_release(&solver(&e), &quote, &spend.pczt, solver_nonces, &package).unwrap();
+        let signature = aggregate(&package, &[payer_share, solver_share], &e.inputs.fvk).unwrap();
         let bytes: [u8; 64] = (&signature).into();
         verify_spend_auth(
             &ak_bytes(&e.inputs.fvk),
@@ -442,5 +255,90 @@ mod policy {
             &bytes,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn policy_refuses_a_fee_above_the_cap() {
+        use pczt::roles::creator::Creator;
+        use pczt::roles::io_finalizer::IoFinalizer;
+        use pczt::roles::updater::Updater;
+        use rand::rand_core::UnwrapErr;
+        use rand::rngs::SysRng;
+        use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
+        use zcash_primitives::transaction::fees::transparent::InputSize;
+        use zcash_primitives::transaction::fees::FeeRule;
+        use zcash_protocol::consensus::{BlockHeight, Parameters};
+
+        /// A fee rule that charges a flat, oversized fee.
+        struct HighFee(Zatoshis);
+        impl FeeRule for HighFee {
+            type Error = std::convert::Infallible;
+            fn fee_required<P: Parameters>(
+                &self,
+                _: &P,
+                _: BlockHeight,
+                _: impl IntoIterator<Item = InputSize>,
+                _: impl IntoIterator<Item = usize>,
+                _: usize,
+                _: usize,
+                _: usize,
+                _: usize,
+            ) -> Result<Zatoshis, Self::Error> {
+                Ok(self.0)
+            }
+        }
+
+        let e = escrow();
+        let quote = fixture_quote();
+        let fee = 1_000_000;
+        let mut builder = Builder::new(
+            NETWORK,
+            e.inputs.target_height,
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: None,
+                ironwood_anchor: Some(e.inputs.anchor),
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
+        );
+        builder
+            .add_ironwood_spend::<std::convert::Infallible>(
+                e.inputs.fvk.clone(),
+                e.inputs.note,
+                e.inputs.merkle_path.clone(),
+            )
+            .unwrap();
+        builder
+            .add_ironwood_output::<std::convert::Infallible>(
+                Some(release_ovk(&e.inputs.fvk)),
+                *e.solver.orchard().unwrap(),
+                Zatoshis::const_from_u64(ESCROW_VALUE - fee),
+                quote.id.memo(),
+            )
+            .unwrap();
+        let built = builder
+            .build_for_pczt(UnwrapErr(SysRng), &HighFee(Zatoshis::const_from_u64(fee)))
+            .unwrap();
+        let pczt = Creator::build_from_parts(built.pczt_parts).unwrap();
+        let pczt = IoFinalizer::new(pczt)
+            .finalize_io(UnwrapErr(SysRng))
+            .unwrap();
+        let pczt = Updater::new(pczt)
+            .update_global_with(|mut g| {
+                g.set_proprietary(
+                    ironwood_intent_escrow::note::QUOTE_ID_KEY.into(),
+                    quote.id.to_hex().into_bytes(),
+                )
+            })
+            .finish();
+        let facts = verify_package(&pczt, &e.inputs.fvk).unwrap();
+        assert_eq!(facts.fee, fee);
+        assert!(fee > MAX_ESCROW_FEE);
+        let (nonces, solver_commitments) = round1(&share(&e, "solver.key"));
+        let (_, payer_commitments) = round1(&share(&e, "payer.key"));
+        let package = signing_package(&facts, vec![payer_commitments, solver_commitments]);
+        let err = solver_release(&solver(&e), &quote, &pczt, nonces, &package).unwrap_err();
+        assert!(matches!(err, Error::FeeTooHigh { .. }), "{err}");
     }
 }

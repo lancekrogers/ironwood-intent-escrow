@@ -21,6 +21,9 @@ use crate::error::Error;
 /// for a transaction it has not seen holds for about 33 s and then answers
 /// HTTP 408 with a JSON error (measured 2026-10-22). A final transaction
 /// answers at once.
+/// A `tx` response is a few kB; anything near this is not one.
+const MAX_RESPONSE: u64 = 16 * 1024 * 1024;
+
 const TIMEOUT: Duration = Duration::from_secs(75);
 
 /// A NEAR JSON-RPC endpoint over HTTPS.
@@ -86,12 +89,18 @@ impl ArchivalRpc {
             .and_then(|()| stream.write_all(body))
             .map_err(|e| err("write", &e))?;
         let mut response = Vec::new();
-        match stream.read_to_end(&mut response) {
+        match (&mut stream).take(MAX_RESPONSE).read_to_end(&mut response) {
             Ok(_) => {}
             // Some servers close without TLS close_notify after a complete
             // HTTP/1.0 response.
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !response.is_empty() => {}
             Err(e) => return Err(err("read", &e)),
+        }
+        if response.len() as u64 >= MAX_RESPONSE {
+            return Err(Error::Attestation(format!(
+                "{}: the response exceeds 16 MiB",
+                self.url
+            )));
         }
         http_body(&response).map_err(|e| err("response", &e))
     }

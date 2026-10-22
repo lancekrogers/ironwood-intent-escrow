@@ -149,6 +149,11 @@ pub fn check_payload(
     if result.pointer("/status/SuccessValue").is_none() {
         return Err(missing("status.SuccessValue"));
     }
+    if let Some(status) = result.get("final_execution_status") {
+        if status.as_str() != Some("FINAL") {
+            return Err(missing("final_execution_status FINAL"));
+        }
+    }
     require_eq(tx, "/hash", &pointer.hash, "transaction.hash")?;
     require_eq(tx, "/signer_id", &pointer.sender, "transaction.signer_id")?;
     require_eq(tx, "/receiver_id", &quote.asset, "transaction.receiver_id")?;
@@ -175,8 +180,10 @@ pub fn check_payload(
         "args.receiver_id",
     )?;
     require_eq(call, "/amount", &quote.amount.to_string(), "args.amount")?;
-    if !logs.iter().any(|log| event_memo_matches(log, &quote_hex)) {
-        return Err(missing("the ft_transfer event log memo with the quote id"));
+    if !logs.iter().any(|log| event_matches(log, quote, pointer)) {
+        return Err(missing(
+            "the ft_transfer event log with the quote id, owners, and amount",
+        ));
     }
     Ok(())
 }
@@ -223,22 +230,32 @@ fn receipt_logs(result: &Value) -> Vec<String> {
         .collect()
 }
 
-/// Whether a log is the NEP-297 `ft_transfer` event carrying the quote id.
-fn event_memo_matches(log: &str, quote_hex: &str) -> bool {
+/// Whether a log is the NEP-297 `ft_transfer` event for this payment: one
+/// `data` entry that carries the quote id as memo, moves the quote amount,
+/// and goes from the solver to the destination account.
+fn event_matches(log: &str, quote: &Quote, pointer: &NearTxPointer) -> bool {
     let Some(json) = log.strip_prefix("EVENT_JSON:") else {
         return false;
     };
     let Ok(event) = serde_json::from_str::<Value>(json) else {
         return false;
     };
+    let amount = quote.amount.to_string();
+    let quote_hex = quote.id.to_hex();
+    let field = |d: &Value, k: &str| d.get(k).and_then(Value::as_str).map(str::to_string);
     event.get("standard").and_then(Value::as_str) == Some("nep141")
         && event.get("event").and_then(Value::as_str) == Some("ft_transfer")
         && event
             .get("data")
             .and_then(Value::as_array)
             .is_some_and(|data| {
-                data.iter()
-                    .any(|d| d.get("memo").and_then(Value::as_str) == Some(quote_hex))
+                data.iter().any(|d| {
+                    field(d, "memo").as_deref() == Some(quote_hex.as_str())
+                        && field(d, "amount").as_deref() == Some(amount.as_str())
+                        && field(d, "old_owner_id").as_deref() == Some(pointer.sender.as_str())
+                        && field(d, "new_owner_id").as_deref()
+                            == Some(quote.destination_account.as_str())
+                })
             })
 }
 

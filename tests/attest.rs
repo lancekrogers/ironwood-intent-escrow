@@ -133,6 +133,35 @@ fn attest_refuses_an_rpc_error_and_a_different_transaction() {
 }
 
 #[test]
+fn attest_refuses_an_event_with_another_amount_or_a_non_final_status() {
+    let mut doc: Value = serde_json::from_slice(&fixture("near_ok.json")).unwrap();
+    let log = doc["result"]["receipts_outcome"][0]["outcome"]["logs"][0]
+        .as_str()
+        .unwrap()
+        .replace("250000000000000000000000", "1");
+    doc["result"]["receipts_outcome"][0]["outcome"]["logs"][0] = Value::String(log);
+    let err = check_payload(
+        &quote(),
+        &pointer(),
+        &banned(),
+        &serde_json::to_vec(&doc).unwrap(),
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::MissingField(_)), "{err}");
+
+    let mut doc: Value = serde_json::from_slice(&fixture("near_ok.json")).unwrap();
+    doc["result"]["final_execution_status"] = Value::String("EXECUTED_OPTIMISTIC".into());
+    let err = check_payload(
+        &quote(),
+        &pointer(),
+        &banned(),
+        &serde_json::to_vec(&doc).unwrap(),
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::MissingField(_)), "{err}");
+}
+
+#[test]
 fn attest_gas_fixture_is_not_searched() {
     let rpc = FixtureRpc(fixture("near_gas.json"));
     attest(&quote(), &pointer(), &banned(), &rpc).unwrap();

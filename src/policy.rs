@@ -9,10 +9,15 @@
 //!   from the refund key when the package is built, and the output is
 //!   encrypted to the refund OVK, which the solver does not hold.
 //!
+//! - The solver signs only a package that pays the solver alone, for the
+//!   quote it filled. Without this, the payer, who coordinates, could hand
+//!   the solver a refund to co-sign after the solver paid on NEAR.
+//!
 //! Each signer first checks the coordinator's `SigningPackage` against the
 //! PCZT it holds: the package hash, the sighash, and the randomizer must be
 //! the PCZT's own, or the answer is `package_mismatch` before anything else
-//! runs, including any RPC call.
+//! runs, including any RPC call. Every signer also refuses a fee above
+//! [`MAX_ESCROW_FEE`].
 
 use orchard::keys::{FullViewingKey, OutgoingViewingKey, Scope};
 use pczt::Pczt;
@@ -29,6 +34,11 @@ use crate::note::{escrow_spend_fee, spend_pczt, EscrowSpend, NoteInputs, SpendOu
 use crate::quote::Quote;
 use crate::view::{verify_package, CheckerView, PackageFacts};
 use crate::wallet::PayerWallet;
+
+/// The most an escrow spend may pay in fees. The builder's ZIP 317 fee for
+/// the two-action escrow spend is 10,000 zatoshis; a package above this cap
+/// would be routing escrow value to the miners.
+pub const MAX_ESCROW_FEE: u64 = 100_000;
 
 /// The signing package the coordinator builds from the package facts and
 /// the round 1 commitments of the two signers taking part.
@@ -57,6 +67,58 @@ pub struct DeadlineSigner {
     escrow_fvk: FullViewingKey,
     refund_fvk: FullViewingKey,
     solver: orchard::Address,
+}
+
+/// The solver process: `solver.key`, `escrow.fvk`, and its own address.
+pub struct SolverSigner {
+    share: ShareFile,
+    escrow_fvk: FullViewingKey,
+    solver: orchard::Address,
+}
+
+impl SolverSigner {
+    /// Refuses a share file that is not the solver's.
+    pub fn new(
+        share: ShareFile,
+        escrow_fvk: FullViewingKey,
+        own_address: &UnifiedAddress,
+    ) -> Result<Self, Error> {
+        require_role(&share, SignerId::Solver)?;
+        Ok(SolverSigner {
+            share,
+            escrow_fvk,
+            solver: ironwood_receiver(own_address)?,
+        })
+    }
+}
+
+/// The solver's round 2 for a release: the package must be the PCZT's, the
+/// fee within the cap, and the single output must pay the solver, with the
+/// quote id the solver filled in its memo (`not_a_release`).
+pub fn solver_release(
+    signer: &SolverSigner,
+    quote: &Quote,
+    pczt: &Pczt,
+    nonces: SigningNonces,
+    package: &SigningPackage,
+) -> Result<Share, Error> {
+    check_package(pczt, package, &signer.escrow_fvk)?;
+    let view = CheckerView::new(pczt, &signer.escrow_fvk, &release_ovk(&signer.escrow_fvk))
+        .map_err(|e| {
+            Error::NotARelease(format!("the outputs do not open under the escrow key: {e}"))
+        })?;
+    let pays_solver = matches!(view.outputs.as_slice(), [only] if only.address == signer.solver);
+    if !pays_solver {
+        return Err(Error::NotARelease(
+            "the package does not pay the solver alone".into(),
+        ));
+    }
+    if view.quote_id != quote.id {
+        return Err(Error::NotARelease(
+            "the memo carries another quote id".into(),
+        ));
+    }
+    round2(&signer.share, nonces, package)
 }
 
 impl PayerSigner {
@@ -260,7 +322,8 @@ fn check_refund(
     Ok(())
 }
 
-/// The package must be the PCZT's own: hash, sighash, and randomizer.
+/// The package must be the PCZT's own (hash, sighash, and randomizer), and
+/// its fee within [`MAX_ESCROW_FEE`].
 fn check_package(
     pczt: &Pczt,
     package: &SigningPackage,
@@ -275,6 +338,12 @@ fn check_package(
     }
     if package.randomizer != facts.randomizer {
         return Err(Error::PackageMismatch("randomizer"));
+    }
+    if facts.fee > MAX_ESCROW_FEE {
+        return Err(Error::FeeTooHigh {
+            fee: facts.fee,
+            max: MAX_ESCROW_FEE,
+        });
     }
     Ok(facts)
 }

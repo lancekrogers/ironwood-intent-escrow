@@ -4,6 +4,8 @@
 
 #![allow(dead_code)] // each test binary uses a different subset
 
+pub mod policy;
+
 use incrementalmerkletree::{Hashable, Level};
 use ironwood_intent_escrow::address::escrow_address;
 use ironwood_intent_escrow::frost::keygen;

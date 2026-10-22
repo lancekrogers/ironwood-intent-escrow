@@ -163,6 +163,15 @@ pub enum Error {
         found: SignerId,
     },
 
+    /// An escrow spend pays more in fees than the policy allows.
+    #[error("fee_too_high: the package pays {fee} zatoshis in fees, above the {max} cap")]
+    FeeTooHigh {
+        /// The package's fee.
+        fee: u64,
+        /// The cap.
+        max: u64,
+    },
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),
