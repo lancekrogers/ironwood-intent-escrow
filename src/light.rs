@@ -9,7 +9,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
-use zcash_client_backend::proto::service::{BlockId, ChainSpec, TreeState};
+use zcash_client_backend::proto::service::{
+    BlockId, ChainSpec, RawTransaction, TreeState, TxFilter,
+};
+use zcash_primitives::transaction::TxId;
 
 use crate::error::Error;
 
@@ -57,6 +60,48 @@ pub async fn tip_tree_state(client: &mut LightClient, url: &str) -> Result<TreeS
         .map_err(|e| light_err(url, e))?
         .into_inner();
     Ok(state)
+}
+
+/// Submits raw transaction bytes. A nonzero `error_code` from the server is
+/// an error carrying its message, which a blocked run records verbatim.
+pub async fn broadcast(client: &mut LightClient, url: &str, tx_bytes: &[u8]) -> Result<(), Error> {
+    let response = client
+        .send_transaction(RawTransaction {
+            data: tx_bytes.to_vec(),
+            height: 0,
+        })
+        .await
+        .map_err(|e| light_err(url, e))?
+        .into_inner();
+    if response.error_code != 0 {
+        return Err(Error::LightServer(format!(
+            "{url}: send_transaction error {}: {}",
+            response.error_code, response.error_message
+        )));
+    }
+    Ok(())
+}
+
+/// Where a transaction stands: `Ok(Some(height))` once mined in the main
+/// chain, `Ok(None)` while in the mempool or on a side fork.
+pub async fn mined_height(
+    client: &mut LightClient,
+    url: &str,
+    txid: &TxId,
+) -> Result<Option<u64>, Error> {
+    let raw = client
+        .get_transaction(TxFilter {
+            block: None,
+            index: 0,
+            hash: txid.as_ref().to_vec(),
+        })
+        .await
+        .map_err(|e| light_err(url, e))?
+        .into_inner();
+    Ok(match raw.height {
+        0 | u64::MAX => None,
+        height => Some(height),
+    })
 }
 
 /// Refuses a tree state without a non-empty Ironwood tree. A server that

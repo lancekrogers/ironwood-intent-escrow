@@ -45,12 +45,14 @@ single share produces.
   output against it. It is recorded in this file once generated:
 
   ```
-  solver_address: (filled by sequence 03 from runs/solver_address.txt)
+  solver_address: utest1hgqeh0gzlgrdcduysnuvkpa477tn976m3zpafv7xz0larteu7hnkvaqqergw2ll9alnepga24kaga6wved0gdrnmeq95q09sc5gqwwvq
   ```
 
-  Until that line carries a `utest1` address, the policy signers load it
-  from `runs/solver_address.txt`. An address is not key material and may be
-  committed.
+  Filled by sequence 05 on 2026-10-22. Sequence 03 did not create the
+  solver's wallet, so the fill run created it in
+  `~/.ironwood-intent-escrow/testnet/solver/` and wrote this Orchard-only
+  address to `runs/solver_address.txt`. An address is not key material and
+  may be committed.
 
 No file in this list is a spending key. `*.key` files are excluded by
 `.gitignore`; `escrow.fvk` and the refund full viewing key stay out of the

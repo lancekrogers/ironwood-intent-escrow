@@ -11,6 +11,10 @@
 //! string of every receipt outcome. Block hashes, transaction and receipt
 //! hashes, gas, heights, and deposits are never searched, and no arbitrary
 //! 32-byte value is banned, because the quote id is one.
+//!
+//! The transfer itself must be logged by the asset contract's own successful
+//! receipt, in the legacy `Transfer`/`Memo:` form `wrap.testnet` emits or as
+//! a NEP-297 event.
 
 use base64::Engine;
 use serde_json::Value;
@@ -180,12 +184,51 @@ pub fn check_payload(
         "args.receiver_id",
     )?;
     require_eq(call, "/amount", &quote.amount.to_string(), "args.amount")?;
-    if !logs.iter().any(|log| event_matches(log, quote, pointer)) {
+    if !transfer_logged(result, quote, pointer) {
         return Err(missing(
-            "the ft_transfer event log with the quote id, owners, and amount",
+            "the asset contract's transfer log with the quote id, owners, and amount",
         ));
     }
     Ok(())
+}
+
+/// Whether a successful receipt executed by the asset contract itself logs
+/// this transfer, in either form NEP-141 contracts emit:
+///
+/// - the legacy pair `wrap.testnet` emits (measured 2026-10-22, NEAR
+///   transaction `7J1bzUpXaJo2oHqtbXHh5sme7FXhucexpiQiQ7fkG7uk`):
+///   `Transfer {amount} from {sender} to {destination}` and
+///   `Memo: {quote id}`, each matched exactly;
+/// - a NEP-297 `ft_transfer` event whose one `data` entry carries the same
+///   four values.
+///
+/// A log from any other executor, or from a failed receipt, never counts.
+fn transfer_logged(result: &Value, quote: &Quote, pointer: &NearTxPointer) -> bool {
+    let transfer = format!(
+        "Transfer {} from {} to {}",
+        quote.amount, pointer.sender, quote.destination_account
+    );
+    let memo = format!("Memo: {}", quote.id.to_hex());
+    result
+        .get("receipts_outcome")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r.get("outcome"))
+        .filter(|o| o.get("executor_id").and_then(Value::as_str) == Some(quote.asset.as_str()))
+        .filter(|o| o.pointer("/status/SuccessValue").is_some())
+        .any(|o| {
+            let logs: Vec<&str> = o
+                .get("logs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .collect();
+            let legacy = logs.contains(&transfer.as_str()) && logs.contains(&memo.as_str());
+            legacy || logs.iter().any(|log| event_matches(log, quote, pointer))
+        })
 }
 
 /// The decoded JSON args of every `ft_transfer` call.

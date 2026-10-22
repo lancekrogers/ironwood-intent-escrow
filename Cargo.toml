@@ -49,7 +49,7 @@ webpki-roots = "1"
 sha2 = "0.10"
 shardtree = "0.8"
 secrecy = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tonic = { version = "0.14", default-features = false, features = ["channel", "tls-ring", "tls-webpki-roots"] }
 
 [dev-dependencies]

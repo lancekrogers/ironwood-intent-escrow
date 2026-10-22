@@ -34,11 +34,29 @@ by view call on 2026-10-22). The call:
 - `deposit`: 1 yoctoNEAR, as NEP-141 requires.
 
 NEP-141 defines `memo` as "for use cases that may benefit from indexing or
-providing information for a transfer" and the `ft_transfer` NEP-297 event
-log carries `memo` in its `data`. So the quote id appears twice in the
-fetched transaction: in the FunctionCall `args` and in the
-`EVENT_JSON:{"standard":"nep141",...}` log of the receipt outcome. The
-attestation requires both.
+providing information for a transfer". The quote id appears twice in the
+fetched transaction: in the FunctionCall `args`, and in the transfer log of
+the receipt that `wrap.testnet` itself executes. The attestation requires
+both.
+
+Corrected 2026-10-22 after the fill run's payment, NEAR transaction
+`7J1bzUpXaJo2oHqtbXHh5sme7FXhucexpiQiQ7fkG7uk`. This file first said the
+transfer log is a NEP-297 `EVENT_JSON` event. That was taken from the
+standard and was not checked against `wrap.testnet`, which predates NEP-297
+and logs two plain lines from its own receipt:
+
+```
+Transfer 10000000000000000000000 from ironwood-solver-a5slbw.testnet to ironwood-payer-a5slbw.testnet
+Memo: 490acaf70aaf0d4e87944189c9be33930f90f6ebd3c5c0a61666510216a45be5
+```
+
+The attestation accepts either form, but only from a receipt whose
+`executor_id` is the quote's asset and whose status is `SuccessValue`:
+
+- the legacy pair `Transfer {amount} from {sender} to {destination}` and
+  `Memo: {quote id}`, each matched exactly; or
+- a NEP-297 `ft_transfer` event whose single `data` entry carries the same
+  amount, sender, destination, and memo.
 
 A plain NEAR `Transfer` action has no args and no memo, so native NEAR
 cannot carry the quote id. wNEAR was chosen over deploying a receipt
@@ -80,8 +98,9 @@ transaction on 2026-10-22:
 
 - `transaction.actions[].FunctionCall.{method_name, args, gas, deposit}`,
   with `args` base64 JSON.
-- `receipts_outcome[].outcome.logs[]`, strings, where NEP-297 events are
-  `EVENT_JSON:` followed by JSON.
+- `receipts_outcome[].outcome.{executor_id, logs[], status}`, where the
+  logs are strings: `wrap.testnet` writes the legacy `Transfer`/`Memo:`
+  pair, and NEP-297 contracts write `EVENT_JSON:` followed by JSON.
 - `status.SuccessValue` on success. Anything else fails the attestation.
 
 ## Record
@@ -119,8 +138,9 @@ and must be present.
 
 Required values, each a `missing_field` error if absent:
 
-- The quote id, 64 lowercase hex, in `args.memo` and in the `ft_transfer`
-  event log `memo`.
+- The quote id, 64 lowercase hex, in `args.memo` and in the asset
+  receipt's transfer log, legacy `Memo:` line or NEP-297 event `memo`, with
+  the matching amount, sender, and destination.
 - `args.receiver_id` equal to the quote's `destination_account`.
 - `args.amount` equal to the quote's `amount`.
 - `transaction.receiver_id` equal to the quote's `asset` contract

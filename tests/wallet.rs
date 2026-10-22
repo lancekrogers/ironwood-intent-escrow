@@ -153,3 +153,35 @@ fn wallet_reopens_with_the_same_accounts() {
     assert_ne!(next_refund.encode(&Network::TestNetwork), first_refund);
     assert!(dir.path().join(REFUND_KEY_FILE).exists());
 }
+
+#[test]
+fn wallet_escrow_account_imports_once_and_holds_no_note_before_a_scan() {
+    let dir = tempfile::tempdir().unwrap();
+    let keys = tempfile::tempdir().unwrap();
+    let escrow_fvk = ironwood_intent_escrow::frost::keygen(keys.path()).unwrap();
+    let ufvk =
+        ironwood_intent_escrow::escrow_account::escrow_ufvk(&Network::TestNetwork, &escrow_fvk)
+            .unwrap();
+    assert_eq!(ufvk.orchard(), Some(&escrow_fvk));
+    assert!(ufvk.sapling().is_none());
+
+    let mut wallet = new_wallet(dir.path());
+    assert!(wallet.escrow_account(&escrow_fvk).unwrap().is_none());
+    let first = wallet
+        .ensure_escrow_account(&escrow_fvk, &offline_birthday())
+        .unwrap();
+    let again = wallet
+        .ensure_escrow_account(&escrow_fvk, &offline_birthday())
+        .unwrap();
+    assert_eq!(first, again);
+
+    let reopened = PayerWallet::open(dir.path(), Network::TestNetwork).unwrap();
+    assert_eq!(reopened.escrow_account(&escrow_fvk).unwrap(), Some(first));
+    let err = wallet
+        .escrow_input(
+            &escrow_fvk,
+            &zcash_primitives::transaction::TxId::from_bytes([7; 32]),
+        )
+        .unwrap_err();
+    assert!(matches!(err, Error::NoSpendableNote), "{err}");
+}

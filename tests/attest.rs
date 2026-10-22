@@ -1,9 +1,21 @@
 //! `attest` against fixture NEAR responses. Run with `cargo test attest`.
 //!
-//! The fixtures are `tx` results in the shape `receipt-chain.md` records: an
-//! `ft_transfer` on `wrap.testnet` with the quote id as memo, and the NEP-297
-//! event log. `near_banned.json` plants a `utest1` address in a log, and
-//! `near_gas.json` puts the escrow's zatoshi amount in `gas` and `gas_burnt`.
+//! The fixtures are `tx` results in the shape the archival RPC returns: an
+//! `ft_transfer` on `wrap.testnet` with the quote id as memo. `wrap.testnet`
+//! logs the transfer in the legacy form, not as a NEP-297 event; these are
+//! the two lines from the fill run's real payment, transaction
+//! `7J1bzUpXaJo2oHqtbXHh5sme7FXhucexpiQiQ7fkG7uk`, 2026-10-22:
+//!
+//! ```text
+//! Transfer 10000000000000000000000 from ironwood-solver-a5slbw.testnet to ironwood-payer-a5slbw.testnet
+//! Memo: 490acaf70aaf0d4e87944189c9be33930f90f6ebd3c5c0a61666510216a45be5
+//! ```
+//!
+//! `near_ok.json`, `near_banned.json`, and `near_gas.json` use that form;
+//! `near_banned.json` adds a `utest1` address in a log, and `near_gas.json`
+//! puts the escrow's zatoshi amount in `gas` and `gas_burnt`.
+//! `near_ok_nep297.json` carries the same transfer as a NEP-297 event, the
+//! other form `attest` accepts.
 
 use std::path::PathBuf;
 
@@ -159,6 +171,27 @@ fn attest_refuses_an_event_with_another_amount_or_a_non_final_status() {
     )
     .unwrap_err();
     assert!(matches!(err, Error::MissingField(_)), "{err}");
+}
+
+#[test]
+fn attest_refuses_a_transfer_log_from_another_executor() {
+    let mut doc: Value = serde_json::from_slice(&fixture("near_ok.json")).unwrap();
+    doc["result"]["receipts_outcome"][0]["outcome"]["executor_id"] =
+        Value::String("solver-ironwood.testnet".into());
+    let err = check_payload(
+        &quote(),
+        &pointer(),
+        &banned(),
+        &serde_json::to_vec(&doc).unwrap(),
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::MissingField(_)), "{err}");
+}
+
+#[test]
+fn attest_accepts_the_nep297_event_form() {
+    let rpc = FixtureRpc(fixture("near_ok_nep297.json"));
+    attest(&quote(), &pointer(), &banned(), &rpc).unwrap();
 }
 
 #[test]

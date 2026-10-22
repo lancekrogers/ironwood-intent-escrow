@@ -1,0 +1,16 @@
+{
+  "broadcast": "sent",
+  "deadline_refused_release": true,
+  "escrow_address": "utest16cuusvxg23tnypp4wrvytd46rcmw4zkzkey0dypjnj0gjeaeyu7rwxquhr4q0txeddd9gvxlyvzvl3xwt5pwehzc5rkqrjmxscarh7er",
+  "escrow_zatoshis": 4000000,
+  "fund_mined_height": 4530559,
+  "fund_txid": "20058089e6c8b5b00744c935d62308da9af52ef613537496ff22bf70e03b0512",
+  "light_server": "https://testnet.zec.rocks:443",
+  "near_payload_sha256": "a516ed4a23dde4ebb161729e1980009d89c950f41732f4b16686adf9193e21a7",
+  "near_rpc_url": "https://archival-rpc.testnet.near.org",
+  "near_sender": "ironwood-solver-a5slbw.testnet",
+  "near_tx_hash": "7J1bzUpXaJo2oHqtbXHh5sme7FXhucexpiQiQ7fkG7uk",
+  "quote_id": "490acaf70aaf0d4e87944189c9be33930f90f6ebd3c5c0a61666510216a45be5",
+  "spend_mined_height": 4530577,
+  "spend_txid": "f094fdf4c1daf2b8d63af8011d1601ff1288895fbe1289be7b7ec9009c6df61b"
+}

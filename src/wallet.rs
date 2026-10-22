@@ -58,7 +58,7 @@ pub const WALLET_DB_FILE: &str = "payer_wallet.sqlite";
 
 const SEED_LEN: usize = 32;
 
-type Db = WalletDb<rusqlite::Connection, Network, SystemClock, UnwrapErr<SysRng>>;
+pub(crate) type Db = WalletDb<rusqlite::Connection, Network, SystemClock, UnwrapErr<SysRng>>;
 
 /// An Ironwood note the payer can spend, as the wallet database tracks it.
 pub type SpendableNote = ReceivedNote<ReceivedNoteId, orchard::note::Note>;
@@ -89,7 +89,7 @@ const FUNDING_CONFIRMATIONS: u32 = 10;
 /// `Debug` prints the network and nothing else.
 pub struct PayerWallet {
     network: Network,
-    db: Db,
+    pub(crate) db: Db,
     funding: AccountUuid,
     refund: AccountUuid,
     payer_seed: SecretVec<u8>,
@@ -203,13 +203,25 @@ impl PayerWallet {
     /// The note the funding transaction spends, with its Merkle path to the
     /// Ironwood anchor `FUNDING_CONFIRMATIONS` blocks below the scanned tip.
     pub fn funding_input(&mut self, min: Zatoshis) -> Result<NoteInputs, Error> {
+        let received = self.spendable_note(min)?;
+        let fvk = orchard_fvk(&self.ufvk(self.funding)?)?;
+        self.note_input(&received, fvk)
+    }
+
+    /// A received note's Merkle path and root at the anchor
+    /// `FUNDING_CONFIRMATIONS` blocks below the scanned tip, with `fvk` as the
+    /// key that owns it.
+    pub(crate) fn note_input(
+        &mut self,
+        received: &SpendableNote,
+        fvk: FullViewingKey,
+    ) -> Result<NoteInputs, Error> {
         let confirmations = NonZeroU32::new(FUNDING_CONFIRMATIONS).expect("nonzero");
         let (target, anchor_height) = self
             .db
             .get_target_and_anchor_heights(confirmations)
             .map_err(wallet_err)?
             .ok_or(Error::NoSpendableNote)?;
-        let received = self.spendable_note(min)?;
         if received.mined_height().is_none_or(|h| h > anchor_height) {
             return Err(Error::NoSpendableNote);
         }
@@ -229,7 +241,7 @@ impl PayerWallet {
             )));
         };
         Ok(NoteInputs {
-            fvk: orchard_fvk(&self.ufvk(self.funding)?)?,
+            fvk,
             note: *received.note(),
             merkle_path: path.into(),
             anchor: root.into(),
@@ -385,6 +397,6 @@ fn orchard_fvk(ufvk: &zcash_keys::keys::UnifiedFullViewingKey) -> Result<FullVie
         .ok_or_else(|| Error::Wallet("an account has no Orchard key".into()))
 }
 
-fn wallet_err(e: impl std::fmt::Display) -> Error {
+pub(crate) fn wallet_err(e: impl std::fmt::Display) -> Error {
     Error::Wallet(e.to_string())
 }
