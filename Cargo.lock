@@ -1235,6 +1235,7 @@ name = "ironwood-intent-escrow"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "frost-core",
  "frost-rerandomized",
  "hex",
@@ -1246,6 +1247,7 @@ dependencies = [
  "rand_core 0.6.4",
  "reddsa 0.5.2",
  "rusqlite",
+ "rustls",
  "secrecy",
  "serde",
  "serde_json",
@@ -1255,6 +1257,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "webpki-roots",
  "zcash_address",
  "zcash_client_backend",
  "zcash_client_sqlite",

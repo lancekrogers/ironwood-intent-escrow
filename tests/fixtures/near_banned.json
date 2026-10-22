@@ -1,0 +1,74 @@
+{
+  "jsonrpc": "2.0",
+  "id": "dontcare",
+  "result": {
+    "final_execution_status": "FINAL",
+    "status": {
+      "SuccessValue": ""
+    },
+    "transaction": {
+      "signer_id": "solver-ironwood.testnet",
+      "public_key": "ed25519:7Z9ZajGKvb6C6LaiB7fnsWQZNwq8roEKCFdtgFGaDheo",
+      "nonce": 192837465000001,
+      "receiver_id": "wrap.testnet",
+      "actions": [
+        {
+          "FunctionCall": {
+            "method_name": "ft_transfer",
+            "args": "eyJyZWNlaXZlcl9pZCI6InBheWVyLWlyb253b29kLnRlc3RuZXQiLCJhbW91bnQiOiIyNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJtZW1vIjoiM2Y5YTFjN2U1YjJkNDA4NmExZjNjNWU3MDkyYjRkNmY4YTBjMmU0ZjYxODNhNWM3ZTlmYjFkM2Y1YTdjOWUwYiJ9",
+            "gas": 30000000000000,
+            "deposit": "1"
+          }
+        }
+      ],
+      "priority_fee": 0,
+      "signature": "ed25519:3bBTeKC9eyxi7QiLgBRBkvqbsBRxsLP5FKTYjbqKdR5ZJEwBiYotVdCnu14ivm1qQMXvK8KKUc4EFhFa5hytdBef",
+      "hash": "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
+    },
+    "transaction_outcome": {
+      "id": "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw",
+      "block_hash": "5Pk716N113awdSaUDZEPZVi9Zs6hJmG5KCJtp5qQK3LB",
+      "proof": [],
+      "outcome": {
+        "logs": [],
+        "receipt_ids": [
+          "3ELeRTTg5W5hAYaEFznzFV1jknNFkjHqS8ytwvQEQP1Z"
+        ],
+        "gas_burnt": 308059234342,
+        "tokens_burnt": "30805923434200000000",
+        "executor_id": "solver-ironwood.testnet",
+        "status": {
+          "SuccessReceiptId": "3ELeRTTg5W5hAYaEFznzFV1jknNFkjHqS8ytwvQEQP1Z"
+        },
+        "metadata": {
+          "version": 1,
+          "gas_profile": null
+        }
+      }
+    },
+    "receipts_outcome": [
+      {
+        "id": "3ELeRTTg5W5hAYaEFznzFV1jknNFkjHqS8ytwvQEQP1Z",
+        "block_hash": "5Pk716N113awdSaUDZEPZVi9Zs6hJmG5KCJtp5qQK3LB",
+        "proof": [],
+        "outcome": {
+          "logs": [
+            "EVENT_JSON:{\"standard\":\"nep141\",\"version\":\"1.0.0\",\"event\":\"ft_transfer\",\"data\":[{\"old_owner_id\":\"solver-ironwood.testnet\",\"new_owner_id\":\"payer-ironwood.testnet\",\"amount\":\"250000000000000000000000\",\"memo\":\"3f9a1c7e5b2d4086a1f3c5e7092b4d6f8a0c2e4f6183a5c7e9fb1d3f5a7c9e0b\"}]}",
+            "refund to utest1anx7acxmv78cmk4st8l4s0gd3j8r6mv5dp7yseveg8dn7pqxrthag7zcgznkcpalz6439rxa8zwp6wm3sjj5r8md6d8r0qypmyd3l63x"
+          ],
+          "receipt_ids": [],
+          "gas_burnt": 2428287213496,
+          "tokens_burnt": "242828721349600000000",
+          "executor_id": "wrap.testnet",
+          "status": {
+            "SuccessValue": ""
+          },
+          "metadata": {
+            "version": 3,
+            "gas_profile": []
+          }
+        }
+      }
+    ]
+  }
+}

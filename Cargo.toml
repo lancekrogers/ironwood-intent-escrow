@@ -39,8 +39,13 @@ zeroize = "1"
 # ring is the rustls provider because aws-lc-rs needs cmake.
 async-trait = "0.1"
 rand = { version = "0.10", features = ["sys_rng"] }
+base64 = "0.22"
 hex = "0.4"
 rusqlite = "0.37"
+# The archival NEAR RPC is one HTTPS POST; rustls with ring and the webpki
+# roots are already in the tree through the light server path.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
 sha2 = "0.10"
 shardtree = "0.8"
 secrecy = "0.8"

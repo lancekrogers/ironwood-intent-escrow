@@ -116,6 +116,19 @@ pub enum Error {
     #[error("invalid_quote: {0}")]
     InvalidQuote(String),
 
+    /// The NEAR receipt carries a Zcash address, a Zcash transaction id, or
+    /// the zatoshi amount. The message names the kind, never the value.
+    #[error("banned_field: {0}")]
+    BannedField(String),
+
+    /// The NEAR receipt lacks a field the quote requires, or it differs.
+    #[error("missing_field: {0}")]
+    MissingField(String),
+
+    /// The NEAR payload could not be fetched or read.
+    #[error("attestation: {0}")]
+    Attestation(String),
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),
