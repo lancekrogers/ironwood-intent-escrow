@@ -108,6 +108,14 @@ pub enum Error {
     #[error("quote_id_mismatch: {0}")]
     QuoteIdMismatch(String),
 
+    /// A quote carried a refund-address key.
+    #[error("refund_field_rejected: a quote cannot carry `{0}`")]
+    RefundFieldRejected(String),
+
+    /// A quote does not parse.
+    #[error("invalid_quote: {0}")]
+    InvalidQuote(String),
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),
