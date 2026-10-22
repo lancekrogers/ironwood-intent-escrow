@@ -1237,6 +1237,7 @@ dependencies = [
  "async-trait",
  "frost-core",
  "frost-rerandomized",
+ "incrementalmerkletree",
  "orchard",
  "pasta_curves 0.6.1",
  "pczt",
@@ -1247,6 +1248,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "shardtree",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1257,6 +1259,7 @@ dependencies = [
  "zcash_keys",
  "zcash_primitives",
  "zcash_protocol",
+ "zcash_transparent",
  "zeroize",
  "zip32",
 ]

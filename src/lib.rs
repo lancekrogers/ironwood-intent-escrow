@@ -10,6 +10,7 @@ pub mod error;
 mod files;
 pub mod frost;
 pub mod light;
+pub mod note;
 pub mod wallet;
 
 pub use error::Error;

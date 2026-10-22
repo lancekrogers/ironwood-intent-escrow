@@ -94,6 +94,13 @@ async fn scan(wallet: &mut PayerWallet) -> Result<(), Error> {
         ),
         Err(e) => println!("{e}"),
     }
+    match wallet.funding_input(Zatoshis::const_from_u64(1)) {
+        Ok(inputs) => println!(
+            "funding input: witness to the Ironwood anchor, target height {}",
+            u32::from(inputs.target_height)
+        ),
+        Err(e) => println!("funding input: {e}"),
+    }
     Ok(())
 }
 

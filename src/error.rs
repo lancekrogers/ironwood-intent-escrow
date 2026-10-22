@@ -66,6 +66,25 @@ pub enum Error {
     #[error("light_server: {0}")]
     LightServer(String),
 
+    /// An output would be encrypted to the all-zero outgoing viewing key.
+    #[error(
+        "zero_outgoing_viewing_key: an output would open under the all-zero outgoing viewing key"
+    )]
+    ZeroOutgoingViewingKey,
+
+    /// The note does not cover the amount plus the fee.
+    #[error("insufficient_funds: the note holds {have} zatoshis and the transaction needs {need}")]
+    InsufficientFunds {
+        /// The note's value.
+        have: u64,
+        /// The amount plus the fee.
+        need: u64,
+    },
+
+    /// Building, proving, signing, or extracting a PCZT failed.
+    #[error("pczt: {0}")]
+    Pczt(String),
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),

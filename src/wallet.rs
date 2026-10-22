@@ -12,21 +12,27 @@
 //! the refund addresses it has handed out.
 
 use std::fs;
+use std::num::NonZeroU32;
 use std::path::Path;
 
-use orchard::keys::{FullViewingKey, OutgoingViewingKey, Scope};
+use orchard::keys::{FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey};
+use pczt::roles::signer::Signer;
+use pczt::Pczt;
 use rand::rand_core::UnwrapErr;
 use rand::rngs::SysRng;
 use rand_core::{OsRng, RngCore};
 use secrecy::{ExposeSecret, SecretVec};
+use shardtree::error::ShardTreeError;
 use zcash_client_backend::data_api::locking::LockedInputPolicy;
 use zcash_client_backend::data_api::wallet::input_selection::LockFilter;
 use zcash_client_backend::data_api::wallet::{ConfirmationsPolicy, TargetHeight};
 use zcash_client_backend::data_api::{
-    Account, AccountBalance, AccountBirthday, Balance, InputSource, WalletRead, WalletWrite,
+    Account, AccountBalance, AccountBirthday, Balance, InputSource, WalletCommitmentTrees,
+    WalletRead, WalletWrite,
 };
 use zcash_client_backend::wallet::ReceivedNote;
 use zcash_client_sqlite::util::SystemClock;
+use zcash_client_sqlite::wallet::commitment_tree;
 use zcash_client_sqlite::wallet::init::init_wallet_db;
 use zcash_client_sqlite::{AccountUuid, ReceivedNoteId, WalletDb};
 use zcash_keys::address::UnifiedAddress;
@@ -41,6 +47,7 @@ use crate::block_cache::MemBlockCache;
 use crate::error::Error;
 use crate::files::write_new;
 use crate::light::LightClient;
+use crate::note::FundInputs;
 
 /// The seed that owns the funding note.
 pub const PAYER_KEY_FILE: &str = "payer_wallet.key";
@@ -73,6 +80,10 @@ pub struct WalletReport {
 
 const SCAN_BATCH: u32 = 1_000;
 
+/// Confirmations before the funding note is spent: the anchor sits this far
+/// below the scanned tip, matching the default policy `spendable_note` uses.
+const FUNDING_CONFIRMATIONS: u32 = 10;
+
 /// The payer's funding account and refund account.
 ///
 /// `Debug` prints the network and nothing else.
@@ -81,6 +92,7 @@ pub struct PayerWallet {
     db: Db,
     funding: AccountUuid,
     refund: AccountUuid,
+    payer_seed: SecretVec<u8>,
 }
 
 impl PayerWallet {
@@ -124,6 +136,7 @@ impl PayerWallet {
             db,
             funding,
             refund,
+            payer_seed,
         })
     }
 
@@ -139,6 +152,7 @@ impl PayerWallet {
             db,
             funding,
             refund,
+            payer_seed,
         })
     }
 
@@ -184,6 +198,61 @@ impl PayerWallet {
             .into_iter()
             .next()
             .ok_or(Error::NoSpendableNote)
+    }
+
+    /// The note the funding transaction spends, with its Merkle path to the
+    /// Ironwood anchor `FUNDING_CONFIRMATIONS` blocks below the scanned tip.
+    pub fn funding_input(&mut self, min: Zatoshis) -> Result<FundInputs, Error> {
+        let confirmations = NonZeroU32::new(FUNDING_CONFIRMATIONS).expect("nonzero");
+        let (target, anchor_height) = self
+            .db
+            .get_target_and_anchor_heights(confirmations)
+            .map_err(wallet_err)?
+            .ok_or(Error::NoSpendableNote)?;
+        let received = self.spendable_note(min)?;
+        if received.mined_height().is_none_or(|h| h > anchor_height) {
+            return Err(Error::NoSpendableNote);
+        }
+        let position = received.note_commitment_tree_position();
+        let (root, path) = self
+            .db
+            .with_ironwood_tree_mut::<_, _, ShardTreeError<commitment_tree::Error>>(|tree| {
+                let root = tree.root_at_checkpoint_id(&anchor_height)?;
+                let path = tree.witness_at_checkpoint_id_caching(position, &anchor_height)?;
+                Ok((root, path))
+            })
+            .map_err(wallet_err)?
+            .ok_or_else(|| Error::Wallet("the wallet has no Ironwood tree".into()))?;
+        let (Some(root), Some(path)) = (root, path) else {
+            return Err(Error::Wallet(format!(
+                "no Ironwood anchor or witness at height {anchor_height}"
+            )));
+        };
+        Ok(FundInputs {
+            fvk: orchard_fvk(&self.ufvk(self.funding)?)?,
+            note: *received.note(),
+            merkle_path: path.into(),
+            anchor: root.into(),
+            target_height: target.into(),
+        })
+    }
+
+    /// Signs the funding account's Ironwood spend at `index` in an
+    /// IO-finalized, proved PCZT. The spend authorizing key is derived for
+    /// this call and dropped with it.
+    pub fn sign_funding_spend(&self, pczt: Pczt, index: usize) -> Result<Pczt, Error> {
+        let usk = UnifiedSpendingKey::from_seed(
+            &self.network,
+            self.payer_seed.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
+        .map_err(|e| Error::Wallet(format!("{e:?}")))?;
+        let ask = SpendAuthorizingKey::from(usk.orchard());
+        let mut signer = Signer::new(pczt).map_err(|e| Error::Pczt(format!("signer: {e:?}")))?;
+        signer
+            .sign_ironwood(UnwrapErr(SysRng), index, &ask)
+            .map_err(|e| Error::Pczt(format!("signer: {e:?}")))?;
+        Ok(signer.finish())
     }
 
     /// The next unused Ironwood-only refund address. The database records

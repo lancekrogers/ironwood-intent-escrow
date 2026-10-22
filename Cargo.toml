@@ -16,7 +16,7 @@ reddsa = { version = "0.5.2", features = ["frost"] }
 # librustzcash, Ironwood-capable releases of 2026-10-21.
 orchard = "0.16.0"
 zcash_primitives = "0.31.0"
-pczt = { version = "0.10.0", features = ["orchard", "prover", "signer", "io-finalizer", "tx-extractor"] }
+pczt = { version = "0.10.0", features = ["orchard", "prover", "signer", "io-finalizer", "tx-extractor", "zcp-builder"] }
 zcash_client_backend = { version = "0.25.0", features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-transport", "lightwalletd-tonic-tls-webpki-roots", "pczt", "sync"] }
 zcash_client_sqlite = { version = "0.23.0", features = ["orchard", "transparent-inputs"] }
 zcash_keys = { version = "0.17.0", features = ["orchard"] }
@@ -40,9 +40,19 @@ zeroize = "1"
 async-trait = "0.1"
 rand = { version = "0.10", features = ["sys_rng"] }
 rusqlite = "0.37"
+shardtree = "0.8"
 secrecy = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tonic = { version = "0.14", default-features = false, features = ["channel", "tls-ring", "tls-webpki-roots"] }
 
 [dev-dependencies]
+incrementalmerkletree = "0.9"
+zcash_transparent = "0.11"
 tempfile = "3"
+
+# Proving an Ironwood action in a debug build is slow: the proving key alone
+# takes 11.9 s unoptimized against 0.9 s optimized (stack.md, Prover). Tests
+# prove transactions, so dependencies build optimized; this crate does not,
+# so its own debug assertions still run.
+[profile.dev.package."*"]
+opt-level = 3
