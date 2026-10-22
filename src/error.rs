@@ -26,6 +26,15 @@ pub enum Error {
     #[error("key_mismatch: {0}")]
     KeyMismatch(&'static str),
 
+    /// A unified address has a receiver other than the Orchard receiver that
+    /// Ironwood uses.
+    #[error("not_ironwood_only: {0}")]
+    NotIronwoodOnly(&'static str),
+
+    /// A unified address string does not decode for the expected network.
+    #[error("address_decode: {0}")]
+    AddressDecode(String),
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),
