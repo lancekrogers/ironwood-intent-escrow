@@ -11,6 +11,8 @@ mod files;
 pub mod frost;
 pub mod light;
 pub mod note;
+pub mod quote;
+pub mod view;
 pub mod wallet;
 
 pub use error::Error;

@@ -47,7 +47,7 @@ use crate::block_cache::MemBlockCache;
 use crate::error::Error;
 use crate::files::write_new;
 use crate::light::LightClient;
-use crate::note::FundInputs;
+use crate::note::NoteInputs;
 
 /// The seed that owns the funding note.
 pub const PAYER_KEY_FILE: &str = "payer_wallet.key";
@@ -202,7 +202,7 @@ impl PayerWallet {
 
     /// The note the funding transaction spends, with its Merkle path to the
     /// Ironwood anchor `FUNDING_CONFIRMATIONS` blocks below the scanned tip.
-    pub fn funding_input(&mut self, min: Zatoshis) -> Result<FundInputs, Error> {
+    pub fn funding_input(&mut self, min: Zatoshis) -> Result<NoteInputs, Error> {
         let confirmations = NonZeroU32::new(FUNDING_CONFIRMATIONS).expect("nonzero");
         let (target, anchor_height) = self
             .db
@@ -228,7 +228,7 @@ impl PayerWallet {
                 "no Ironwood anchor or witness at height {anchor_height}"
             )));
         };
-        Ok(FundInputs {
+        Ok(NoteInputs {
             fvk: orchard_fvk(&self.ufvk(self.funding)?)?,
             note: *received.note(),
             merkle_path: path.into(),

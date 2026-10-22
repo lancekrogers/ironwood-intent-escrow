@@ -85,6 +85,23 @@ pub enum Error {
     #[error("pczt: {0}")]
     Pczt(String),
 
+    /// A quote id is not 64 lowercase hex characters, or a memo does not hold one.
+    #[error("invalid_quote_id: {0}")]
+    InvalidQuoteId(String),
+
+    /// The escrow spend's outputs plus its fee do not equal the note value.
+    #[error("value_mismatch: the note holds {note} zatoshis but the outputs and fee total {outputs_and_fee}")]
+    ValueMismatch {
+        /// The escrow note's value.
+        note: u64,
+        /// The outputs plus the fee.
+        outputs_and_fee: u64,
+    },
+
+    /// The memo and the package disagree on the quote id, or the outputs do.
+    #[error("quote_id_mismatch: {0}")]
+    QuoteIdMismatch(String),
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),

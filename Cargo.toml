@@ -39,7 +39,9 @@ zeroize = "1"
 # ring is the rustls provider because aws-lc-rs needs cmake.
 async-trait = "0.1"
 rand = { version = "0.10", features = ["sys_rng"] }
+hex = "0.4"
 rusqlite = "0.37"
+sha2 = "0.10"
 shardtree = "0.8"
 secrecy = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

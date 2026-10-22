@@ -21,6 +21,7 @@ use pczt::roles::creator::Creator;
 use pczt::roles::io_finalizer::IoFinalizer;
 use pczt::roles::prover::Prover;
 use pczt::roles::tx_extractor::TransactionExtractor;
+use pczt::roles::updater::Updater;
 use pczt::Pczt;
 use rand::rand_core::UnwrapErr;
 use rand::rngs::SysRng;
@@ -34,16 +35,19 @@ use zcash_protocol::value::Zatoshis;
 
 use crate::address::require_ironwood_only;
 use crate::error::Error;
+use crate::quote::QuoteId;
 use crate::wallet::PayerWallet;
 
 /// The all-zero outgoing viewing key. An output encrypted to it can be read
 /// by anyone, which is how indexers read bridge payouts. Never used here.
 pub const ZERO_OVK: [u8; 32] = [0u8; 32];
 
-/// What the funding transaction spends: one Ironwood note the payer owns,
-/// with its Merkle path to `anchor`.
+/// What a transaction spends: one Ironwood note, the full viewing key that
+/// owns it, and its Merkle path to `anchor`. The funding transaction spends
+/// the payer's note; the escrow spend spends the escrow note under
+/// `escrow.fvk`.
 #[derive(Clone, Debug)]
-pub struct FundInputs {
+pub struct NoteInputs {
     /// The payer's funding full viewing key, which owns `note`.
     pub fvk: FullViewingKey,
     /// The note being spent. Must be an Ironwood (V3) note.
@@ -76,7 +80,7 @@ pub struct FundPczt {
 /// all-zero `ovk`.
 pub fn fund_pczt(
     network: Network,
-    inputs: &FundInputs,
+    inputs: &NoteInputs,
     escrow: &UnifiedAddress,
     amount: Zatoshis,
     ovk: OutgoingViewingKey,
@@ -122,7 +126,7 @@ pub fn fund_pczt(
 
 fn fund_builder(
     network: Network,
-    inputs: &FundInputs,
+    inputs: &NoteInputs,
     recipient: orchard::Address,
     amount: Zatoshis,
     ovk: &OutgoingViewingKey,
@@ -163,6 +167,157 @@ fn fund_builder(
         )
         .map_err(builder_err)?;
     Ok(builder)
+}
+
+/// The proprietary PCZT key under which the escrow spend package carries the
+/// quote id in the clear, beside the encrypted memo. `CheckerView` requires
+/// the two to agree.
+pub const QUOTE_ID_KEY: &str = "ironwood-intent-escrow:quote_id";
+
+/// One output of the escrow spend: the solver's address on a release, or a
+/// fresh payer address on a refund.
+#[derive(Clone, Debug)]
+pub struct SpendOutput {
+    /// Must be Ironwood-only.
+    pub address: UnifiedAddress,
+    /// What the output receives.
+    pub value: Zatoshis,
+}
+
+/// An escrow spend package, IO-finalized, unproven, and unsigned.
+pub struct EscrowSpend {
+    /// The ZIP 374 package.
+    pub pczt: Pczt,
+    /// The Ironwood action that spends the escrow note.
+    pub spend_index: usize,
+    /// The ZIP 317 fee.
+    pub fee: Zatoshis,
+}
+
+/// The fee an escrow spend with `outputs` outputs pays, so a caller can set
+/// the output value to the note value minus this.
+pub fn escrow_spend_fee(
+    network: Network,
+    inputs: &NoteInputs,
+    outputs: usize,
+) -> Result<Zatoshis, Error> {
+    let placeholder = orchard_receiver_of(inputs);
+    let mut builder = escrow_builder(network, inputs)?;
+    for _ in 0..outputs {
+        builder
+            .add_ironwood_output::<std::convert::Infallible>(
+                None,
+                placeholder,
+                Zatoshis::ZERO,
+                MemoBytes::empty(),
+            )
+            .map_err(builder_err)?;
+    }
+    builder.get_fee(&FeeRule::standard()).map_err(builder_err)
+}
+
+/// Builds the escrow spend package: the escrow note in, `outputs` out, each
+/// encrypted to the escrow's own outgoing viewing key and carrying the quote
+/// id as its memo. There is no field named for a refund address.
+///
+/// The outputs plus the fee must equal the note value exactly.
+pub fn spend_pczt(
+    network: Network,
+    inputs: &NoteInputs,
+    outputs: &[SpendOutput],
+    quote_id: &QuoteId,
+) -> Result<EscrowSpend, Error> {
+    spend_pczt_with_rng(network, inputs, outputs, quote_id, &mut rng())
+}
+
+/// [`spend_pczt`] with the caller's RNG, which fixes every randomizer the
+/// builder draws: `alpha`, the value commitment trapdoors, and the output
+/// notes' seeds.
+pub fn spend_pczt_with_rng<R: rand::CryptoRng>(
+    network: Network,
+    inputs: &NoteInputs,
+    outputs: &[SpendOutput],
+    quote_id: &QuoteId,
+    rng: &mut R,
+) -> Result<EscrowSpend, Error> {
+    if outputs.is_empty() {
+        return Err(Error::Pczt("an escrow spend needs an output".into()));
+    }
+    let fee = escrow_spend_fee(network, inputs, outputs.len())?;
+    let total = outputs
+        .iter()
+        .try_fold(fee.into_u64(), |sum, o| sum.checked_add(o.value.into_u64()));
+    if total != Some(inputs.note.value().inner()) {
+        return Err(Error::ValueMismatch {
+            note: inputs.note.value().inner(),
+            outputs_and_fee: total.unwrap_or(u64::MAX),
+        });
+    }
+    let ovk = inputs.fvk.to_ovk(Scope::External);
+    let mut builder = escrow_builder(network, inputs)?;
+    for output in outputs {
+        require_ironwood_only(&output.address)?;
+        let recipient = *output
+            .address
+            .orchard()
+            .ok_or(Error::NotIronwoodOnly("it has no Orchard receiver"))?;
+        builder
+            .add_ironwood_output::<std::convert::Infallible>(
+                Some(ovk.clone()),
+                recipient,
+                output.value,
+                quote_id.memo(),
+            )
+            .map_err(builder_err)?;
+    }
+    let built = builder
+        .build_for_pczt(&mut *rng, &FeeRule::standard())
+        .map_err(builder_err)?;
+    let spend_index = built
+        .ironwood_meta
+        .spend_action_index(0)
+        .ok_or_else(|| Error::Pczt("the escrow bundle has no spend".into()))?;
+    let pczt = Creator::build_from_parts(built.pczt_parts)
+        .ok_or_else(|| Error::Pczt("the transaction version has no PCZT form".into()))?;
+    let pczt = IoFinalizer::new(pczt)
+        .finalize_io(&mut *rng)
+        .map_err(|e| Error::Pczt(format!("io finalizer: {e:?}")))?;
+    let pczt = Updater::new(pczt)
+        .update_global_with(|mut global| {
+            global.set_proprietary(QUOTE_ID_KEY.to_string(), quote_id.to_hex().into_bytes())
+        })
+        .finish();
+    Ok(EscrowSpend {
+        pczt,
+        spend_index,
+        fee,
+    })
+}
+
+fn escrow_builder(network: Network, inputs: &NoteInputs) -> Result<Builder<Network, ()>, Error> {
+    let mut builder = Builder::new(
+        network,
+        inputs.target_height,
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: None,
+            ironwood_anchor: Some(inputs.anchor),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        },
+    );
+    builder
+        .add_ironwood_spend::<std::convert::Infallible>(
+            inputs.fvk.clone(),
+            inputs.note,
+            inputs.merkle_path.clone(),
+        )
+        .map_err(builder_err)?;
+    Ok(builder)
+}
+
+fn orchard_receiver_of(inputs: &NoteInputs) -> orchard::Address {
+    inputs.fvk.address_at(0u32, Scope::External)
 }
 
 /// Builds, proves, and signs the funding transaction from the payer's

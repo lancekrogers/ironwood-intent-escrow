@@ -11,7 +11,7 @@ use ironwood_intent_escrow::address::escrow_address;
 use ironwood_intent_escrow::frost::keygen;
 use ironwood_intent_escrow::note::{
     actions_opening_under, extract, fund_pczt, no_action_opens_under_zero_ovk, prove,
-    transparent_bundle_is_empty, tx_bytes, FundInputs, ZERO_OVK,
+    transparent_bundle_is_empty, tx_bytes, NoteInputs, ZERO_OVK,
 };
 use ironwood_intent_escrow::Error;
 use orchard::keys::{FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendingKey};
@@ -60,7 +60,7 @@ fn payer() -> Payer {
 }
 
 /// One V3 note to the payer, alone in a one-leaf tree at position 0.
-fn inputs(payer: &Payer) -> FundInputs {
+fn inputs(payer: &Payer) -> NoteInputs {
     let rho = loop {
         if let Some(rho) = Option::from(Rho::from_bytes(&random_bytes())) {
             break rho;
@@ -83,7 +83,7 @@ fn inputs(payer: &Payer) -> FundInputs {
         std::array::from_fn(|level| MerkleHashOrchard::empty_root(Level::from(level as u8)));
     let merkle_path = MerklePath::from_parts(0, auth_path);
     let anchor = merkle_path.root(note.commitment().into());
-    FundInputs {
+    NoteInputs {
         fvk: payer.fvk.clone(),
         note,
         merkle_path,
