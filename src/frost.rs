@@ -13,15 +13,21 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
+use frost_rerandomized::RandomizedParams;
 use orchard::keys::{FullViewingKey, SpendAuthorizingKey, SpendingKey};
-use pasta_curves::group::ff::Field;
+use orchard::primitives::redpallas::{self as orchard_redpallas, SpendAuth};
+use pasta_curves::group::ff::{Field, PrimeField};
 use pasta_curves::pallas;
 use rand_core::{OsRng, RngCore};
-use reddsa::frost::redpallas::keys::{self, IdentifierList, KeyPackage};
-use reddsa::frost::redpallas::SigningKey;
+use reddsa::frost::redpallas::keys::{self, IdentifierList, KeyPackage, PublicKeyPackage};
+use reddsa::frost::redpallas::round1::{self, SigningNonces};
+use reddsa::frost::redpallas::round2::SignatureShare;
+use reddsa::frost::redpallas::{
+    CheaterDetection, Error as FrostError, Identifier, SigningKey, VerifyingKey,
+};
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::cosign::SignerId;
+use crate::cosign::{Commitments, Share, SignerId, SigningPackage, SpendRandomizer};
 use crate::error::Error;
 
 /// Signatures needed to spend: two of the three holders.
@@ -109,6 +115,140 @@ impl std::fmt::Debug for ShareFile {
             .field("signer", &self.signer)
             .finish_non_exhaustive()
     }
+}
+
+/// Round 1 for one signer: fresh nonces, which stay in this signer's memory,
+/// and the commitments it publishes.
+pub fn round1(share: &ShareFile) -> (SigningNonces, Commitments) {
+    let (nonces, commitments) = round1::commit(share.key_package.signing_share(), &mut OsRng);
+    let published = Commitments {
+        signer: share.signer,
+        commitments,
+    };
+    (nonces, published)
+}
+
+/// Round 2 for one signer: its signature share over the package.
+///
+/// Takes the nonces by value so they cannot sign a second package. A policy
+/// signer refuses before calling this. A package with fewer than two signers'
+/// commitments returns `threshold_not_met`, and no share exists.
+pub fn round2(
+    share: &ShareFile,
+    nonces: SigningNonces,
+    package: &SigningPackage,
+) -> Result<Share, Error> {
+    let frost_package = package.to_frost()?;
+    // stack.md: the randomizer must be the transaction's own alpha, so the
+    // seed-derived randomizer that replaces this call cannot be used.
+    #[allow(deprecated)]
+    let signed = frost_rerandomized::sign(
+        &frost_package,
+        &nonces,
+        &share.key_package,
+        package.randomizer,
+    );
+    let signature_share = signed.map_err(|e| match e {
+        FrostError::IncorrectNumberOfCommitments => {
+            Error::ThresholdNotMet("the package carries fewer than two signers' commitments".into())
+        }
+        other => other.into(),
+    })?;
+    Ok(Share {
+        signer: share.signer,
+        share: signature_share,
+    })
+}
+
+/// Combines two or more signature shares into a spend authorization, and
+/// returns it only if it verifies against `ak` randomized by the package's
+/// `alpha`, the key the transaction carries.
+pub fn aggregate(
+    package: &SigningPackage,
+    shares: &[Share],
+    fvk: &FullViewingKey,
+) -> Result<orchard_redpallas::Signature<SpendAuth>, Error> {
+    let by_signer = shares_by_identifier(shares)?;
+    if by_signer.len() < usize::from(THRESHOLD) {
+        return Err(Error::ThresholdNotMet(format!(
+            "{} distinct signature share(s), two are required",
+            by_signer.len()
+        )));
+    }
+    let committed: Vec<Identifier> = package
+        .signers()?
+        .into_iter()
+        .map(SignerId::identifier)
+        .collect();
+    if !committed.iter().eq(by_signer.keys()) {
+        return Err(Error::ShareSetMismatch);
+    }
+    let frost_package = package.to_frost()?;
+    let ak = ak_bytes(fvk);
+    let group_key = VerifyingKey::deserialize(&ak)?;
+    // escrow.fvk is the only public key file, so there are no verifying
+    // shares to blame a bad share with. The result is verified below instead.
+    let public_keys = PublicKeyPackage::new(BTreeMap::new(), group_key, Some(THRESHOLD));
+    let params = RandomizedParams::from_randomizer(&group_key, package.randomizer);
+    let signature = frost_rerandomized::aggregate_custom(
+        &frost_package,
+        &by_signer,
+        &public_keys,
+        CheaterDetection::Disabled,
+        &params,
+    )
+    .map_err(|e| match e {
+        FrostError::InvalidSignature => Error::InvalidSignature,
+        FrostError::UnknownIdentifier => Error::ShareSetMismatch,
+        other => other.into(),
+    })?;
+    let bytes: [u8; 64] = signature
+        .serialize()?
+        .try_into()
+        .map_err(|_| Error::Frost("a RedPallas signature is 64 bytes".into()))?;
+    verify_spend_auth(&ak, &package.randomizer, &package.sighash, &bytes)?;
+    Ok(orchard_redpallas::Signature::from(bytes))
+}
+
+/// Checks a spend authorization signature the way the chain does: with
+/// orchard's RedPallas, against `rk = ak + alpha * G`.
+pub fn verify_spend_auth(
+    ak: &[u8; 32],
+    randomizer: &SpendRandomizer,
+    sighash: &[u8; 32],
+    signature: &[u8; 64],
+) -> Result<(), Error> {
+    let alpha = alpha_scalar(randomizer)?;
+    let ak = orchard_redpallas::VerificationKey::<SpendAuth>::try_from(*ak)
+        .map_err(|_| Error::KeyMismatch("ak is not a RedPallas spend validating key"))?;
+    ak.randomize(&alpha)
+        .verify(sighash, &orchard_redpallas::Signature::from(*signature))
+        .map_err(|_| Error::InvalidSignature)
+}
+
+/// `alpha` as orchard's Pallas scalar. The two `pasta_curves` versions share
+/// the canonical 32-byte little-endian encoding (stack.md).
+fn alpha_scalar(randomizer: &SpendRandomizer) -> Result<pallas::Scalar, Error> {
+    let bytes: [u8; 32] = randomizer
+        .serialize()
+        .try_into()
+        .map_err(|_| Error::Frost("a Pallas scalar is 32 bytes".into()))?;
+    Option::from(pallas::Scalar::from_repr(bytes))
+        .ok_or_else(|| Error::Frost("the randomizer is not a canonical Pallas scalar".into()))
+}
+
+/// The shares keyed by FROST identifier. A signer listed twice is refused.
+fn shares_by_identifier(shares: &[Share]) -> Result<BTreeMap<Identifier, SignatureShare>, Error> {
+    let mut by_signer = BTreeMap::new();
+    for share in shares {
+        if by_signer
+            .insert(share.signer.identifier(), share.share)
+            .is_some()
+        {
+            return Err(Error::DuplicateSigner(share.signer));
+        }
+    }
+    Ok(by_signer)
 }
 
 /// A uniformly random Orchard spending key. This is the body of

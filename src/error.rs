@@ -6,9 +6,24 @@
 
 use std::path::PathBuf;
 
+use crate::cosign::SignerId;
+
 /// Every way this crate refuses or fails.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Fewer than two distinct signers took part.
+    #[error("threshold_not_met: {0}")]
+    ThresholdNotMet(String),
+
+    /// The same signer appears twice in one signing session.
+    #[error("duplicate_signer: {0:?} appears more than once")]
+    DuplicateSigner(SignerId),
+
+    /// The signature shares do not come from exactly the signers whose
+    /// commitments are in the package.
+    #[error("share_set_mismatch: the shares are not from the signers in the package")]
+    ShareSetMismatch,
+
     /// A FROST identifier is not one of the three escrow holders.
     #[error("unknown_signer: the identifier is not payer, solver, or deadline")]
     UnknownSigner,
@@ -25,6 +40,10 @@ pub enum Error {
     /// Derived keys disagree, for example the FROST group key is not `ak`.
     #[error("key_mismatch: {0}")]
     KeyMismatch(&'static str),
+
+    /// The aggregated signature does not verify against the randomized `ak`.
+    #[error("invalid_signature: the aggregate does not verify against the randomized ak")]
+    InvalidSignature,
 
     /// A unified address has a receiver other than the Orchard receiver that
     /// Ironwood uses.
