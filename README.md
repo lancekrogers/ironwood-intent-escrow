@@ -238,9 +238,10 @@ quote's claimed NEAR payment and the refund check refused that quote as
 address appears in neither quote, in no fill record, and nowhere on NEAR.
 The refund run's output is in [`demo/logs/refund.log`](demo/logs/refund.log).
 
-Demo: [`demo/zecathon.mp4`](demo/zecathon.mp4), 3 min 5 s, narrated. The
-`verify` segment runs live; the fill and refund segments show the recorded
-runs above, and say so. `just demo` renders it from
+Demo: [watch on YouTube](https://youtu.be/LTd2J9bINGY), or the same file
+in the repo, [`demo/zecathon.mp4`](demo/zecathon.mp4). 3 min 5 s, narrated.
+The `verify` segment runs live; the fill and refund segments show the
+recorded runs above, and say so. `just demo` renders it from
 [`demo/narration.md`](demo/narration.md) and the tapes in `demo/tapes/`
 with obey-voice, vhs, and ffmpeg.
 
