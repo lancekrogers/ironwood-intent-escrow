@@ -222,7 +222,7 @@ rerun resumes and never funds or pays twice.
 Checks, which CI runs on every push:
 
 ```text
-cargo test                                  # 97 tests, none ignored, no network; proving tests build the Halo 2 key once per process
+cargo test                                  # 98 tests, none ignored, no network; proving tests build the Halo 2 key once per process
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```

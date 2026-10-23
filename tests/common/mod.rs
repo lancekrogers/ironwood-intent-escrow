@@ -305,7 +305,7 @@ pub struct StoredRpc(pub Vec<u8>);
 
 impl ironwood_intent_escrow::attest::NearRpc for StoredRpc {
     fn url(&self) -> &str {
-        "runs/fill.near.json"
+        "stored://near"
     }
     fn tx(&self, _hash: &str, _sender: &str) -> Result<Vec<u8>, ironwood_intent_escrow::Error> {
         Ok(self.0.clone())

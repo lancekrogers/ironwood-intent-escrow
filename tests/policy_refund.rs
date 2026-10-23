@@ -279,19 +279,18 @@ mod policy {
             .unwrap()
             .push(Value::String(format!("to {escrow_address}")));
         let cases = [
-            (other, recorded_payment()),
-            (fill_quote, StoredRpc(serde_json::to_vec(&planted).unwrap())),
+            (other, recorded_payment(), "missing_field"),
+            (
+                fill_quote,
+                StoredRpc(serde_json::to_vec(&planted).unwrap()),
+                "banned_field",
+            ),
         ];
-        for (quote, rpc) in cases {
+        for (quote, rpc, why) in cases {
             let claim = recorded_claim(&quote);
-            let check = check_payload(&quote, &claim.pointer(), &recorded_refund_banned(), &rpc.0);
-            assert!(
-                matches!(
-                    check,
-                    Err(Error::MissingField(_)) | Err(Error::BannedField(_))
-                ),
-                "{check:?}"
-            );
+            let check = check_payload(&quote, &claim.pointer(), &recorded_refund_banned(), &rpc.0)
+                .unwrap_err();
+            assert!(check.to_string().starts_with(why), "{check}");
             let mut e = escrow();
             let (refund, facts) = refund_for(&mut e, &quote, EXPIRY);
             let claims = MemClaims::with(claim);

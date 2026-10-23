@@ -74,9 +74,12 @@ succeeds and before it asks anyone for a signature:
 ```
 
 - The directory is mode 0700 and the file mode 0600.
-- A second write for the same quote with the same hash is a no-op, so a
-  resumed fill run can write it again. A second write with a different
-  hash is refused with `claim`.
+- The file is written under a temporary name and linked into place, so a
+  crash never leaves a partial claim, and an existing claim is never
+  replaced.
+- A second write for the same quote with the same hash and sender is a
+  no-op, so a resumed fill run can write it again. A second write naming
+  any other payment is refused with `claim`.
 - A claim file that does not parse, or whose `quote_id` is not the quote
   the file is named for, is refused with `claim`. The signer does not sign
   over a claim store it cannot read.
@@ -100,7 +103,10 @@ refused before the claim store is read, so no network call happens for a
 package that would be refused anyway.
 
 Then, as step 6 of the refusal rule in `shares.md`, the signer looks up a
-claim for `quote.id`. Exactly four outcomes:
+claim for `quote.id`. A claim store it cannot read, or a claim file that
+does not parse or names another quote, is refused with `claim` before
+anything is fetched. Once the store answers, there are exactly four
+outcomes:
 
 1. **No claim file.** Sign.
 2. **A claim, and no answer.** `NearRpc::tx` fails (transport, TLS, HTTP

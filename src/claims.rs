@@ -79,22 +79,32 @@ impl ClaimStore for NoClaims {
 }
 
 /// Writes `claim` into `dir` (mode 0700) as an owner-only file. Writing the
-/// same hash again is a no-op, so a resumed run can call it twice; a claim
-/// for the same quote with another hash is refused.
+/// same payment again, the same hash and sender, is a no-op, so a resumed
+/// run can call it twice; a claim naming any other payment for the same
+/// quote is refused.
+///
+/// The bytes go to a temporary file that is then hard-linked into place, so
+/// a crash never leaves a partial claim and an existing claim is never
+/// replaced.
 pub fn write_claim(dir: &Path, claim: &FillClaim) -> Result<(), Error> {
     private_dir(dir)?;
     let path = claim_path(dir, &claim.quote_id);
     if let Some(existing) = read_claim(&path, &claim.quote_id)? {
-        if existing.near_tx_hash == claim.near_tx_hash {
+        if existing.pointer() == claim.pointer() {
             return Ok(());
         }
         return Err(Error::Claim(format!(
-            "{}: a claim with another NEAR hash exists for this quote",
+            "{}: a claim naming another NEAR payment exists for this quote",
             path.display()
         )));
     }
     let json = serde_json::to_vec_pretty(claim).map_err(|e| Error::Claim(e.to_string()))?;
-    write_new(&path, &json)
+    let tmp = path.with_extension("json.tmp");
+    let _ = fs::remove_file(&tmp);
+    write_new(&tmp, &json)?;
+    let linked = fs::hard_link(&tmp, &path).map_err(|e| Error::io(&path, e));
+    let _ = fs::remove_file(&tmp);
+    linked
 }
 
 fn claim_path(dir: &Path, quote_id: &QuoteId) -> PathBuf {
@@ -171,6 +181,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_claim(dir.path(), &claim("HashA")).unwrap();
         write_claim(dir.path(), &claim("HashA")).unwrap();
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names.len(), 1, "a temporary file was left: {names:?}");
+    }
+
+    #[test]
+    fn claims_refuse_the_same_hash_from_another_sender() {
+        let dir = tempfile::tempdir().unwrap();
+        write_claim(dir.path(), &claim("HashA")).unwrap();
+        let mut other = claim("HashA");
+        other.near_sender = "someone-else.testnet".into();
+        let err = write_claim(dir.path(), &other).unwrap_err();
+        assert!(matches!(err, Error::Claim(_)), "{err}");
     }
 
     #[test]
