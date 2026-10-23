@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/banner.jpg" alt="An escrow note held by three threads" width="100%">
+
 <h1>ironwood-intent-escrow</h1>
 
 <p><strong>A 2-of-3 FROST escrow on Zcash's Ironwood shielded pool.</strong><br>
