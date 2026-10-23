@@ -145,6 +145,70 @@ Each rule is enforced in code and was checked against the recorded runs.
 8. The checker rejects a transparent output or a zero outgoing viewing key
    on either Zcash transaction. `check_zec`, with negative fixtures.
 
+## Threat model
+
+The payer locks ZEC and wants either the quoted NEAR payment or its ZEC
+back. The solver pays on NEAR and wants the ZEC.
+The deadline device holds the third share and is the payer's own second
+device, not a neutral party. Observers watch the Zcash chain, the NEAR
+chain, or both, and see only what each chain publishes.
+
+### What each party can see
+
+| Party | Sees | Does not see |
+|---|---|---|
+| Zcash observer | Two fully shielded Ironwood transactions per run, their action counts and fees | Note values, addresses, memos, and any link to NEAR except timing |
+| NEAR observer | The solver's account, the payer's account, the wNEAR amount, and a 32-byte quote id in the memo | Any Zcash address, transaction id, or amount |
+| Solver | The escrow address, the escrow note and its value, when the note is spent, and its own NEAR payment | The refund address or the refund output, which is encrypted to the payer's refund address and outgoing viewing key |
+| Payer | Everything on its side: both wallets, the escrow, the quote, the NEAR payment, and the refund | The solver's wallet, beyond the Ironwood address the release pays and what NEAR publishes |
+
+### What the escrow protects
+
+- **The payer's funds against a solver that never fills.** After expiry the
+  payer and the deadline device sign a refund (`deadline_sign` and
+  `payer_refund` in `src/policy.rs`).
+- **The solver against a payer that asks it to co-sign a refund.**
+  `solver_release` signs only a package that pays the solver alone, for
+  the quote it filled.
+- **An honest payer's automation against refunding a filled quote.** Both
+  refund signers re-fetch any fill claim's NEAR payment and refuse with
+  `quote_paid` when it attests (`check_not_paid`,
+  `docs/decisions/fill-claims.md`).
+- **The refund address against reaching NEAR or the quote.** It is made in
+  the payer's wallet when the refund is built (rule 5), and the refund run
+  checks that it appears in no quote, no fill record, and no NEAR payload.
+- **Both Zcash transactions against transparent outputs and the zero
+  outgoing viewing key.** `check_zec` runs on every transaction before it
+  is broadcast.
+
+### What it does not protect, and why
+
+1. **The solver against a dishonest payer.** The deadline device is the
+   payer's (`docs/decisions/shares.md`), so the payer effectively holds two
+   shares and can run a patched signer that refunds a quote the solver
+   already paid. Future work: a deadline holder the payer does not control.
+2. **Against a payer that withholds the fill claim.** NEAR cannot be
+   searched by memo, so the refund signers learn of a fill only from the
+   solver's claim, and in this deployment the claim store is on the
+   payer's machine (`docs/decisions/fill-claims.md`).
+3. **An early refund.** The expiry is signer policy, not consensus. A
+   shielded pool has no script, and the chain accepts a refund that two
+   shares sign at any time (`docs/decisions/shares.md`, "No timelock").
+4. **Against the key's dealer.** A trusted dealer generated the escrow key
+   and split it into shares, in the same process that wrote them. This is
+   not distributed key generation, because ZIP 312 does not yet specify key
+   generation for these keys (`docs/decisions/stack.md`, "Blocked").
+5. **Quantum recoverability.** The key uses the legacy `use_qsk = false`
+   derivation of ZIP 2005 (`docs/decisions/stack.md`, "Fallback for the two
+   runs").
+6. **Timing.** One NEAR payment and one Zcash release minutes apart on a
+   quiet testnet can be aligned by anyone who watches both chains. Nothing
+   in the protocol prevents it. Batching and delay are outside this build.
+7. **The NEAR leg.** The solver's account, its wNEAR, and the payment to
+   the payer are public on NEAR by design. The track allows the other
+   chain's transfer to be public; the claim is only that no Zcash value
+   reaches it.
+
 ## Testnet evidence
 
 From [`runs/fill.json`](runs/fill.json) and
