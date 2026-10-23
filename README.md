@@ -1,5 +1,8 @@
 # ironwood-intent-escrow
 
+[![CI](https://github.com/lancekrogers/ironwood-intent-escrow/actions/workflows/ci.yml/badge.svg)](https://github.com/lancekrogers/ironwood-intent-escrow/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 A 2-of-3 threshold escrow on Zcash's Ironwood shielded pool. A payer locks
 ZEC in a note that any two of three FROST shares can spend. A solver fills
 the payer's quote on another chain and the note is released to the solver.
@@ -134,13 +137,14 @@ Each rule is enforced in code and was checked against the recorded runs.
 From [`runs/fill.json`](runs/fill.json) and
 [`runs/refund.json`](runs/refund.json). Raw transaction bytes are beside
 them as `.tx` files, and the fetched NEAR payload is `fill.near.json`.
+Transaction ids are shortened here; the full values are in the records.
 
 | Run | Step | Transaction | Mined at |
 |---|---|---|---|
-| Fill | fund escrow | `20058089e6c8b5b00744c935d62308da9af52ef613537496ff22bf70e03b0512` | 4,530,559 |
-| Fill | release to solver | `f094fdf4c1daf2b8d63af8011d1601ff1288895fbe1289be7b7ec9009c6df61b` | 4,530,577 |
-| Refund | fund escrow | `46ebf892e436b4c47ebe4d43e48aeb34716f846e88328ac125a41e4266104b08` | 4,530,586 |
-| Refund | refund to fresh address | `7fcc618ad713789296d22dd744a5a7c81929dc08c6bc4ea66b3e709cc7344b4e` | 4,530,598 |
+| Fill | fund escrow | `20058089…e03b0512` | 4,530,559 |
+| Fill | release to solver | `f094fdf4…9c6df61b` | 4,530,577 |
+| Refund | fund escrow | `46ebf892…66104b08` | 4,530,586 |
+| Refund | refund to fresh address | `7fcc618a…c7344b4e` | 4,530,598 |
 
 The fill's NEAR payment is
 [`7J1bzUpXaJo2oHqtbXHh5sme7FXhucexpiQiQ7fkG7uk`](https://testnet.nearblocks.io/txns/7J1bzUpXaJo2oHqtbXHh5sme7FXhucexpiQiQ7fkG7uk)
@@ -158,9 +162,34 @@ Light server: `testnet.zec.rocks:443`. Zcash testnet is past both NU6.3
 
 ## Running it
 
+### Prerequisites
+
+- Rust 1.92 or newer. There are no parameter files to download: the Halo 2
+  proving key is built in process from the `orchard` crate.
+- Zcash testnet funds. `faucet.testnet.valargroup.dev` pays 0.125 TAZ a day
+  to the address `payer_wallet` prints, with no browser or captcha. One
+  payout covers both runs.
+- Two NEAR testnet accounts and `near-cli-rs`. Create them with
+  `near account create-account sponsor-by-faucet-service`: one solver that
+  pays wNEAR and one payer that receives it. The solver wraps NEAR with
+  `near_deposit` on `wrap.testnet`, and the payer registers once with
+  `storage_deposit`.
+- A `run.json` in `~/.ironwood-intent-escrow/testnet/` naming them:
+
+  ```json
+  {
+    "solver_account": "<solver>.testnet",
+    "solver_key_file": "/absolute/path/to/<solver>.testnet.json",
+    "payer_account": "<payer>.testnet",
+    "near_cli": "/absolute/path/to/near"
+  }
+  ```
+
 Keys and wallets live outside every repository under
 `~/.ironwood-intent-escrow/testnet/`, mode 0600. The repository tracks no
 key, seed, or viewing key, and `.gitignore` refuses `*.key` and `*.fvk`.
+The exact steps taken on 2026-10-22 are in
+[`docs/decisions/stack.md`](docs/decisions/stack.md), section "Funding".
 
 ```text
 cargo run --bin payer_wallet -- ~/.ironwood-intent-escrow/testnet/payer   # create the payer wallet, print the faucet address
@@ -171,21 +200,15 @@ cargo run --bin near_tx -- <tx-hash> <sender-account>   # re-fetch a NEAR transa
 ```
 
 `fill` and `refund` save state before every broadcast or payment, so a
-rerun resumes and never funds or pays twice. Funding came from
-`faucet.testnet.valargroup.dev` for TAZ and from near-cli-rs with the
-faucet service for two NEAR testnet accounts. `docs/decisions/stack.md`
-records the exact steps.
+rerun resumes and never funds or pays twice.
 
-Checks:
+Checks, which CI runs on every push:
 
 ```text
-cargo test                                    # 84 tests, none ignored; proving tests build the Halo 2 key in process
+cargo test                                  # 84 tests, none ignored, no network; proving tests build the Halo 2 key once per process
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```
-
-The proving key is built in process from the `orchard` crate. There are no
-parameter files to download.
 
 ## Crate stack
 
@@ -225,4 +248,5 @@ No token, no spending key, no full viewing key, and no solver inventory.
 
 ## License
 
-MIT OR Apache-2.0, per `Cargo.toml`.
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT License](LICENSE-MIT) at your option.
