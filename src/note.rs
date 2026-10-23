@@ -26,7 +26,7 @@ use pczt::Pczt;
 use rand::rand_core::UnwrapErr;
 use rand::rngs::SysRng;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
+use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding, PcztParts};
 use zcash_primitives::transaction::fees::zip317::FeeRule;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, Network};
@@ -249,19 +249,7 @@ pub fn spend_pczt_with_rng<R: rand::CryptoRng>(
     if ovk.as_ref() == &ZERO_OVK {
         return Err(Error::ZeroOutgoingViewingKey);
     }
-    if outputs.is_empty() {
-        return Err(Error::Pczt("an escrow spend needs an output".into()));
-    }
-    let fee = escrow_spend_fee(network, inputs, outputs.len())?;
-    let total = outputs
-        .iter()
-        .try_fold(fee.into_u64(), |sum, o| sum.checked_add(o.value.into_u64()));
-    if total != Some(inputs.note.value().inner()) {
-        return Err(Error::ValueMismatch {
-            note: inputs.note.value().inner(),
-            outputs_and_fee: total.unwrap_or(u64::MAX),
-        });
-    }
+    let fee = require_balanced(network, inputs, outputs)?;
     let mut builder = escrow_builder(network, inputs)?;
     for output in outputs {
         require_ironwood_only(&output.address)?;
@@ -285,21 +273,53 @@ pub fn spend_pczt_with_rng<R: rand::CryptoRng>(
         .ironwood_meta
         .spend_action_index(0)
         .ok_or_else(|| Error::Pczt("the escrow bundle has no spend".into()))?;
-    let pczt = Creator::build_from_parts(built.pczt_parts)
-        .ok_or_else(|| Error::Pczt("the transaction version has no PCZT form".into()))?;
-    let pczt = IoFinalizer::new(pczt)
-        .finalize_io(&mut *rng)
-        .map_err(|e| Error::Pczt(format!("io finalizer: {e:?}")))?;
-    let pczt = Updater::new(pczt)
-        .update_global_with(|mut global| {
-            global.set_proprietary(QUOTE_ID_KEY.to_string(), quote_id.to_hex().into_bytes())
-        })
-        .finish();
+    let pczt = finalize_with_quote_id(built.pczt_parts, quote_id, rng)?;
     Ok(EscrowSpend {
         pczt,
         spend_index,
         fee,
     })
+}
+
+/// The fee, once the outputs plus the fee equal the escrow note exactly.
+fn require_balanced(
+    network: Network,
+    inputs: &NoteInputs,
+    outputs: &[SpendOutput],
+) -> Result<Zatoshis, Error> {
+    if outputs.is_empty() {
+        return Err(Error::Pczt("an escrow spend needs an output".into()));
+    }
+    let fee = escrow_spend_fee(network, inputs, outputs.len())?;
+    let total = outputs
+        .iter()
+        .try_fold(fee.into_u64(), |sum, o| sum.checked_add(o.value.into_u64()));
+    if total != Some(inputs.note.value().inner()) {
+        return Err(Error::ValueMismatch {
+            note: inputs.note.value().inner(),
+            outputs_and_fee: total.unwrap_or(u64::MAX),
+        });
+    }
+    Ok(fee)
+}
+
+/// Creator, IO Finalizer, then the Updater writing the quote id into the
+/// package's proprietary field.
+fn finalize_with_quote_id<R: rand::CryptoRng>(
+    parts: PcztParts<Network>,
+    quote_id: &QuoteId,
+    rng: &mut R,
+) -> Result<Pczt, Error> {
+    let pczt = Creator::build_from_parts(parts)
+        .ok_or_else(|| Error::Pczt("the transaction version has no PCZT form".into()))?;
+    let pczt = IoFinalizer::new(pczt)
+        .finalize_io(&mut *rng)
+        .map_err(|e| Error::Pczt(format!("io finalizer: {e:?}")))?;
+    Ok(Updater::new(pczt)
+        .update_global_with(|mut global| {
+            global.set_proprietary(QUOTE_ID_KEY.to_string(), quote_id.to_hex().into_bytes())
+        })
+        .finish())
 }
 
 fn escrow_builder(network: Network, inputs: &NoteInputs) -> Result<Builder<Network, ()>, Error> {

@@ -118,11 +118,27 @@ impl RunConfig {
 /// moved into its holder's directory beside a copy of `escrow.fvk`, and the
 /// staging directory is removed, so the four files never stay together.
 pub fn ensure_escrow_keys(paths: &RunPaths) -> Result<FullViewingKey, Error> {
-    let payer_fvk = paths.holder(SignerId::Payer).join(FVK_FILE);
-    if payer_fvk.exists() {
-        return read_fvk(&payer_fvk);
-    }
     let staging = paths.base.join("escrow").join("staging");
+    if staging.exists() {
+        return Err(Error::key_file(
+            &staging,
+            "an interrupted key generation left files here; move them to their holders or remove them",
+        ));
+    }
+    let present = |role: SignerId| {
+        let dir = paths.holder(role);
+        dir.join(role.key_file_name()).exists() && dir.join(FVK_FILE).exists()
+    };
+    match SignerId::ALL.into_iter().filter(|r| present(*r)).count() {
+        3 => return read_fvk(&paths.holder(SignerId::Payer).join(FVK_FILE)),
+        0 => {}
+        _ => {
+            return Err(Error::key_file(
+                paths.base.join("escrow"),
+                "some holders have their share and some do not",
+            ))
+        }
+    }
     private_dir(&staging)?;
     let fvk = keygen(&staging)?;
     for role in SignerId::ALL {
@@ -269,7 +285,15 @@ pub async fn broadcast_and_wait(
         .flatten()
         .is_none()
     {
-        broadcast(client, SCAN_SERVER, bytes).await?;
+        match broadcast(client, SCAN_SERVER, bytes).await {
+            Ok(()) => {}
+            // A resumed run rebroadcasts a transaction the mempool may
+            // already hold; that is acceptance, not failure.
+            Err(Error::LightServer(m)) if m.to_ascii_lowercase().contains("already") => {
+                println!("{txid} is already known to the server")
+            }
+            Err(e) => return Err(e),
+        }
     }
     for _ in 0..MAX_POLLS {
         if let Ok(Some(height)) = mined_height(client, SCAN_SERVER, txid).await {

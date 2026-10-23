@@ -202,6 +202,11 @@ local node.
   - `testnet.zec.rocks` serves Ironwood actions in compact blocks. The
     payer wallet's first light-client scan, approved by Lance on 2026-10-22,
     found the faucet note in the Ironwood pool from compact blocks alone.
+  - `testnet.zec.rocks` accepts Ironwood transactions through
+    `send_transaction`, and `get_transaction` reports their heights. Sequence
+    05 broadcast four on 2026-10-22, all mined: two escrow fundings and two
+    FROST-signed escrow spends (`runs/fill.json`, `runs/refund.json`). No
+    local node was used at any point.
 - TLS: `Cargo.toml` turns on `zcash_client_backend`'s
   `lightwalletd-tonic-transport` and `lightwalletd-tonic-tls-webpki-roots`,
   plus `tonic` 0.14 with `tls-ring` and `tokio`. ring is the rustls provider
@@ -232,12 +237,19 @@ local node.
   2026-10-22, replacing an Orchard-plus-Sapling address that was never
   funded). No Sapling spend is ever built, so the Prover section stands. Two
   faucet days cover one fill and one refund at the amounts sequence 05 uses.
-- NEAR testnet: `near create-account <name>.testnet --useFaucet` with
-  near-cli-rs creates and funds an account from the built-in faucet;
-  https://near-faucet.io adds more. Two accounts are needed, one solver that
-  pays and one payer that receives. The solver wraps NEAR into wNEAR with
-  `near_deposit` on `wrap.testnet`, and the payer account registers once with
-  `storage_deposit` on `wrap.testnet`. These accounts do not exist yet.
+- NEAR testnet: near-cli-rs creates and funds an account from the faucet
+  service. Two accounts are needed, one solver that pays and one payer that
+  receives. The solver wraps NEAR into wNEAR with `near_deposit` on
+  `wrap.testnet`, and the payer account registers once with
+  `storage_deposit` on `wrap.testnet`.
+- NEAR accounts, created 2026-10-22 with near-cli-rs 0.26.2 (0.30.1 needs
+  rustc 1.93; this machine has 1.92 and the toolchain was not changed) via
+  `account create-account sponsor-by-faucet-service`:
+  `ironwood-solver-a5slbw.testnet` (10 NEAR, 0.1 wrapped to wNEAR) and
+  `ironwood-payer-a5slbw.testnet` (registered on `wrap.testnet`). Their key
+  files are in `~/.ironwood-intent-escrow/testnet/near/`, mode 0600,
+  outside every repository; `run.json` there names the accounts and the CLI
+  for the run binaries.
 - Payer wallet: a `zcash_client_sqlite` database owned by this crate, in
   `src/wallet.rs` (sequence 03), holding one unified spending key for the
   funding note and a second for refund addresses. No external wallet

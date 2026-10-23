@@ -76,17 +76,29 @@ async fn run() -> Result<(), Error> {
     let mut ctx = setup().await?;
     let fund = fund_step(&mut ctx).await?;
     let fund_txid = fund.txid();
-    let fvk = ctx.escrow_fvk.clone();
-    let inputs = wait_for(&mut ctx.wallet, &mut ctx.client, "the escrow note", |w| {
-        w.escrow_input(&fvk, &fund_txid)
-    })
-    .await?;
+    // Once the refund exists the escrow note is spent; a rerun only checks
+    // and rewrites the records.
+    let inputs = match ctx.state.spend_tx {
+        Some(_) => None,
+        None => Some(escrow_note(&mut ctx, &fund_txid).await?),
+    };
     let quote = quote_step(&mut ctx)?;
-    let spend = spend_step(&mut ctx, &quote, &inputs).await?;
+    let spend = spend_step(&mut ctx, &quote, inputs.as_ref()).await?;
     let fill_refused = fill_package_still_refused(&ctx)?;
     let address = ctx.state.refund_address.clone().unwrap_or_default();
     refund_address_absent(&ctx.paths, &address)?;
     records(&ctx, &quote, &fund, &spend, fill_refused)
+}
+
+async fn escrow_note(
+    ctx: &mut Ctx,
+    fund_txid: &zcash_primitives::transaction::TxId,
+) -> Result<NoteInputs, Error> {
+    let fvk = ctx.escrow_fvk.clone();
+    wait_for(&mut ctx.wallet, &mut ctx.client, "the escrow note", |w| {
+        w.escrow_input(&fvk, fund_txid)
+    })
+    .await
 }
 
 async fn setup() -> Result<Ctx, Error> {
@@ -152,11 +164,12 @@ fn quote_step(ctx: &mut Ctx) -> Result<Quote, Error> {
 async fn spend_step(
     ctx: &mut Ctx,
     quote: &Quote,
-    inputs: &NoteInputs,
+    inputs: Option<&NoteInputs>,
 ) -> Result<Transaction, Error> {
     let tx = match &ctx.state.spend_tx {
         Some(hex) => parse_tx(hex)?,
         None => {
+            let inputs = inputs.ok_or_else(|| Error::Wallet("no escrow note to spend".into()))?;
             let tx = sign_refund(ctx, quote, inputs)?;
             check_zec(&tx_bytes(&tx)?)?;
             ctx.state.spend_tx = Some(hex::encode(tx_bytes(&tx)?));

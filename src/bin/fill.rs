@@ -77,15 +77,24 @@ async fn run() -> Result<(), Error> {
     let mut ctx = setup().await?;
     let fund = fund_step(&mut ctx).await?;
     let fund_txid = fund.txid();
-    let fvk = ctx.escrow_fvk.clone();
-    let inputs = wait_for(&mut ctx.wallet, &mut ctx.client, "the escrow note", |w| {
-        w.escrow_input(&fvk, &fund_txid)
-    })
-    .await?;
+    // Once the spend exists the escrow note is spent, so there is nothing to
+    // wait for; a rerun only rewrites the records.
+    let inputs = match ctx.state.spend_tx {
+        Some(_) => None,
+        None => Some(escrow_note(&mut ctx, &fund_txid).await?),
+    };
     let quote = quote_step(&mut ctx)?;
     let pointer = near_step(&mut ctx, &quote)?;
-    let spend = spend_step(&mut ctx, &quote, &pointer, &inputs, &fund_txid).await?;
+    let spend = spend_step(&mut ctx, &quote, &pointer, inputs.as_ref(), &fund_txid).await?;
     records(&ctx, &quote, &pointer, &fund, &spend)
+}
+
+async fn escrow_note(ctx: &mut Ctx, fund_txid: &TxId) -> Result<NoteInputs, Error> {
+    let fvk = ctx.escrow_fvk.clone();
+    wait_for(&mut ctx.wallet, &mut ctx.client, "the escrow note", |w| {
+        w.escrow_input(&fvk, fund_txid)
+    })
+    .await
 }
 
 async fn setup() -> Result<Ctx, Error> {
@@ -175,7 +184,7 @@ async fn spend_step(
     ctx: &mut Ctx,
     quote: &Quote,
     pointer: &NearTxPointer,
-    inputs: &NoteInputs,
+    inputs: Option<&NoteInputs>,
     fund_txid: &TxId,
 ) -> Result<(Transaction, Attestation), Error> {
     let rpc = ArchivalRpc::new(ARCHIVAL_RPC)?;
@@ -187,6 +196,7 @@ async fn spend_step(
     if let Some(hex) = &ctx.state.spend_tx {
         return Ok((parse_tx(hex)?, attestation));
     }
+    let inputs = inputs.ok_or_else(|| Error::Wallet("no escrow note to spend".into()))?;
     let (tx, attestation) = sign_release(ctx, quote, pointer, inputs, &banned, &rpc)?;
     check_zec(&tx_bytes(&tx)?)?;
     ctx.state.spend_tx = Some(hex::encode(tx_bytes(&tx)?));

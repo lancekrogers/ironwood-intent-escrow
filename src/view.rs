@@ -212,50 +212,71 @@ fn scan_bundle(
         scan.spent_total = scan.spent_total.saturating_add(spend_value);
         scan.output_total = scan.output_total.saturating_add(output_value);
         if spend_value > 0 {
-            match escrow_spend(action, escrow_fvk) {
-                Ok((alpha, cmx)) if scan.spend.is_none() => {
-                    scan.spend = Some((index, alpha, spend_value, cmx))
-                }
-                Ok(_) => scan
-                    .problems
-                    .push("the package spends more than one note".into()),
-                Err(e) => scan.problems.push(e),
-            }
+            record_spend(&mut scan, index, action, escrow_fvk, spend_value);
         }
-        if output_value == 0 {
-            continue;
-        }
-        let Some(ovk) = ovk else {
-            match action.output().recipient() {
-                Some(address) => scan.outputs.push(ViewOutput {
-                    action_index: index,
-                    address: *address,
-                    value: output_value,
-                }),
-                None => scan
-                    .problems
-                    .push(format!("output {index} has no recipient")),
-            }
-            continue;
-        };
-        match action.recover_output_with_ovk(ovk, version) {
-            Ok(Some((note, address, memo))) if note.value().inner() == output_value => {
-                scan.outputs.push(ViewOutput {
-                    action_index: index,
-                    address,
-                    value: output_value,
-                });
-                match QuoteId::from_memo(&memo) {
-                    Ok(id) => scan.memo_ids.push(id),
-                    Err(e) => scan.problems.push(format!("output {index}: {e}")),
-                }
-            }
-            _ => scan.problems.push(format!(
-                "output {index} does not open under the given outgoing viewing key"
-            )),
+        if output_value > 0 {
+            record_output(&mut scan, index, action, ovk, version, output_value);
         }
     }
     scan
+}
+
+/// The escrow spend, which must be the package's only value-carrying spend.
+fn record_spend(
+    scan: &mut Scan,
+    index: usize,
+    action: &orchard::pczt::Action,
+    escrow_fvk: &FullViewingKey,
+    value: u64,
+) {
+    match escrow_spend(action, escrow_fvk) {
+        Ok((alpha, cmx)) if scan.spend.is_none() => scan.spend = Some((index, alpha, value, cmx)),
+        Ok(_) => scan
+            .problems
+            .push("the package spends more than one note".into()),
+        Err(e) => scan.problems.push(e),
+    }
+}
+
+/// A value-carrying output: its verified recipient field without an OVK,
+/// or the note and memo opened under the OVK.
+fn record_output(
+    scan: &mut Scan,
+    index: usize,
+    action: &orchard::pczt::Action,
+    ovk: Option<&OutgoingViewingKey>,
+    version: orchard::bundle::BundleVersion,
+    value: u64,
+) {
+    let Some(ovk) = ovk else {
+        match action.output().recipient() {
+            Some(address) => scan.outputs.push(ViewOutput {
+                action_index: index,
+                address: *address,
+                value,
+            }),
+            None => scan
+                .problems
+                .push(format!("output {index} has no recipient")),
+        }
+        return;
+    };
+    match action.recover_output_with_ovk(ovk, version) {
+        Ok(Some((note, address, memo))) if note.value().inner() == value => {
+            scan.outputs.push(ViewOutput {
+                action_index: index,
+                address,
+                value,
+            });
+            match QuoteId::from_memo(&memo) {
+                Ok(id) => scan.memo_ids.push(id),
+                Err(e) => scan.problems.push(format!("output {index}: {e}")),
+            }
+        }
+        _ => scan.problems.push(format!(
+            "output {index} does not open under the given outgoing viewing key"
+        )),
+    }
 }
 
 /// Binds every field the view reads to the action's commitments. A spend

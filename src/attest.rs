@@ -141,6 +141,32 @@ pub fn check_payload(
 ) -> Result<(), Error> {
     let body: Value = serde_json::from_slice(payload)
         .map_err(|e| Error::Attestation(format!("the payload is not JSON: {e}")))?;
+    let (result, tx) = final_transaction(&body)?;
+    require_eq(tx, "/hash", &pointer.hash, "transaction.hash")?;
+    require_eq(tx, "/signer_id", &pointer.sender, "transaction.signer_id")?;
+    require_eq(tx, "/receiver_id", &quote.asset, "transaction.receiver_id")?;
+
+    let args = transfer_args(tx)?;
+    let logs = receipt_logs(result);
+    for text in args
+        .iter()
+        .flat_map(string_leaves)
+        .chain(logs.iter().cloned())
+    {
+        tokens(&text).try_for_each(|token| banned.check(token))?;
+    }
+    require_transfer_call(&args, quote)?;
+    if !transfer_logged(result, quote, pointer) {
+        return Err(missing(
+            "the asset contract's transfer log with the quote id, owners, and amount",
+        ));
+    }
+    Ok(())
+}
+
+/// The `result` and its `transaction`, once the RPC reports no error, the
+/// transaction succeeded, and its execution is final.
+fn final_transaction(body: &Value) -> Result<(&Value, &Value), Error> {
     if let Some(error) = body.get("error") {
         return Err(Error::Attestation(format!(
             "the RPC returned an error: {error}"
@@ -158,20 +184,12 @@ pub fn check_payload(
             return Err(missing("final_execution_status FINAL"));
         }
     }
-    require_eq(tx, "/hash", &pointer.hash, "transaction.hash")?;
-    require_eq(tx, "/signer_id", &pointer.sender, "transaction.signer_id")?;
-    require_eq(tx, "/receiver_id", &quote.asset, "transaction.receiver_id")?;
+    Ok((result, tx))
+}
 
-    let args = transfer_args(tx)?;
-    let logs = receipt_logs(result);
-    for text in args
-        .iter()
-        .flat_map(string_leaves)
-        .chain(logs.iter().cloned())
-    {
-        tokens(&text).try_for_each(|token| banned.check(token))?;
-    }
-
+/// An `ft_transfer` call whose memo is the quote id must pay the quote's
+/// destination the quote's amount.
+fn require_transfer_call(args: &[Value], quote: &Quote) -> Result<(), Error> {
     let quote_hex = quote.id.to_hex();
     let call = args
         .iter()
@@ -183,13 +201,7 @@ pub fn check_payload(
         &quote.destination_account,
         "args.receiver_id",
     )?;
-    require_eq(call, "/amount", &quote.amount.to_string(), "args.amount")?;
-    if !transfer_logged(result, quote, pointer) {
-        return Err(missing(
-            "the asset contract's transfer log with the quote id, owners, and amount",
-        ));
-    }
-    Ok(())
+    require_eq(call, "/amount", &quote.amount.to_string(), "args.amount")
 }
 
 /// Whether a successful receipt executed by the asset contract itself logs
