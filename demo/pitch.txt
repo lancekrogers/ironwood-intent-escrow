@@ -1,0 +1,19 @@
+ironwood-intent-escrow: a 2-of-3 FROST escrow on Zcash's Ironwood shielded pool
+
+Fills on NEAR. Refunds to a fresh shielded address.
+Never writes a Zcash address, transaction id, or amount on NEAR.
+
+Three shares, any two spend, none spends alone:
+  payer.key      the payer                  signs the release after re-fetching the NEAR payment,
+                                            and the refund
+  solver.key     the solver                 signs only a release that pays the solver
+  deadline.key   the payer's second device  signs only a refund, after expiry,
+                                            with no paid fill claim
+
+Two outcomes:
+  fill     the solver pays wNEAR on NEAR, memo = the quote id
+           -> the payer re-fetches and checks it -> payer + solver release the note
+  refund   the quote expires unfilled
+           -> payer + deadline device refund the note to a fresh address
+
+Testnet only. Trusted-dealer key. The deadline device is the payer's.
