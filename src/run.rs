@@ -27,6 +27,7 @@ use crate::attest::{attest, Attestation, Banned, NearRpc, NearTxPointer};
 use crate::checker::check_zec;
 use crate::cosign::SignerId;
 use crate::error::Error;
+use crate::files::private_dir;
 use crate::frost::{keygen, read_fvk, ShareFile, FVK_FILE};
 use crate::light::{
     broadcast, mined_height, require_ironwood_tree, tip_tree_state, LightClient, SCAN_SERVER,
@@ -84,6 +85,12 @@ impl RunPaths {
             SignerId::Deadline => "deadline",
         };
         self.base.join("escrow").join(name)
+    }
+
+    /// The fill claims the solver leaves after paying on NEAR, one file per
+    /// quote (`docs/decisions/fill-claims.md`).
+    pub fn claims(&self) -> PathBuf {
+        self.base.join("claims")
     }
 
     /// A run's resumable state file.
@@ -415,17 +422,6 @@ pub fn now_unix() -> u64 {
 /// explorers and `zcashd` show it.
 pub fn txid_hex(txid: &TxId) -> String {
     txid.to_string()
-}
-
-fn private_dir(dir: &Path) -> Result<(), Error> {
-    fs::create_dir_all(dir).map_err(|e| Error::io(dir, e))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
-            .map_err(|e| Error::io(dir, e))?;
-    }
-    Ok(())
 }
 
 fn tail(text: &str) -> String {

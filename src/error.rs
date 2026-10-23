@@ -172,6 +172,10 @@ pub enum Error {
         max: u64,
     },
 
+    /// A fill claim could not be written or read, or names another quote.
+    #[error("claim: {0}")]
+    Claim(String),
+
     /// An error from the FROST library that has no more specific code.
     #[error("frost: {0}")]
     Frost(String),

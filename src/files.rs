@@ -1,6 +1,6 @@
-//! File writes for key material.
+//! File writes for key material, claims, and run state.
 
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
@@ -15,4 +15,16 @@ pub(crate) fn write_new(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     let mut file = options.open(path).map_err(|e| Error::io(path, e))?;
     file.write_all(bytes).map_err(|e| Error::io(path, e))?;
     file.sync_all().map_err(|e| Error::io(path, e))
+}
+
+/// Creates `dir` and its parents, and makes `dir` owner-only.
+pub(crate) fn private_dir(dir: &Path) -> Result<(), Error> {
+    fs::create_dir_all(dir).map_err(|e| Error::io(dir, e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+            .map_err(|e| Error::io(dir, e))?;
+    }
+    Ok(())
 }

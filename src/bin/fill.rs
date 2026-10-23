@@ -15,6 +15,7 @@ use std::process::ExitCode;
 use ironwood_intent_escrow::address::escrow_address;
 use ironwood_intent_escrow::attest::{Attestation, Banned, NearTxPointer, ARCHIVAL_RPC};
 use ironwood_intent_escrow::checker::check_zec;
+use ironwood_intent_escrow::claims::{write_claim, FillClaim};
 use ironwood_intent_escrow::cosign::SignerId;
 use ironwood_intent_escrow::frost::{aggregate, round1};
 use ironwood_intent_escrow::light::{connect, LightClient, SCAN_SERVER};
@@ -165,18 +166,33 @@ fn quote_step(ctx: &mut Ctx) -> Result<Quote, Error> {
     Ok(quote)
 }
 
-/// The solver process pays on NEAR once and hands back only the pointer.
+/// The solver process pays on NEAR once, hands back only the pointer, and
+/// leaves a fill claim before any signature is asked for. The state is saved
+/// before the claim, so a failed claim write never leads to a second payment;
+/// a resumed run writes the same claim again, which is a no-op.
 fn near_step(ctx: &mut Ctx, quote: &Quote) -> Result<NearTxPointer, Error> {
-    if let Some((hash, sender)) = &ctx.state.near {
-        return Ok(NearTxPointer {
+    let pointer = match &ctx.state.near {
+        Some((hash, sender)) => NearTxPointer {
             hash: hash.clone(),
             sender: sender.clone(),
-        });
-    }
-    let pointer = near_pay(&ctx.config, quote)?;
-    println!("near payment {} from {}", pointer.hash, pointer.sender);
-    ctx.state.near = Some((pointer.hash.clone(), pointer.sender.clone()));
-    save(ctx)?;
+        },
+        None => {
+            let pointer = near_pay(&ctx.config, quote)?;
+            println!("near payment {} from {}", pointer.hash, pointer.sender);
+            ctx.state.near = Some((pointer.hash.clone(), pointer.sender.clone()));
+            save(ctx)?;
+            pointer
+        }
+    };
+    write_claim(
+        &ctx.paths.claims(),
+        &FillClaim {
+            quote_id: quote.id,
+            near_tx_hash: pointer.hash.clone(),
+            near_sender: pointer.sender.clone(),
+            rpc_url: ARCHIVAL_RPC.to_string(),
+        },
+    )?;
     Ok(pointer)
 }
 

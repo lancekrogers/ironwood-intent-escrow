@@ -7,6 +7,7 @@ pub mod address;
 pub mod attest;
 pub mod block_cache;
 pub mod checker;
+pub mod claims;
 pub mod cosign;
 pub mod error;
 pub mod escrow_account;
