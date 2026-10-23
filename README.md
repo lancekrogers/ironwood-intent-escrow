@@ -266,8 +266,11 @@ named there (`archival-rpc.testnet.near.org`). Then it checks:
 
 It prints one `PASS` or `FAIL` line per check, ends with
 `18 passed, 0 failed, 0 skipped (offline)`, and exits 0 only when every
-check passed. `--offline` runs the same checks on the stored bytes and
-skips the five fetches. It takes a few seconds once built.
+check passed. `near payment fetched` compares the archival node's answer
+byte for byte with the recorded payload; `near payment attests` checks what
+the answer says, so a change in NEAR's response format would fail only the
+first. `--offline` runs the same checks on the stored bytes and skips the
+five fetches. It takes a few seconds once built.
 
 ### Prerequisites for running the flows
 
@@ -356,15 +359,19 @@ say so and what was measured instead.
 This repository was planned and executed with
 [Festival](https://github.com/Obedience-Corp/festival), a vibe engineering
 framework, and its [`fest`](https://github.com/Obedience-Corp/fest) CLI.
-The work was one festival with two phases: an implementation phase of five
-sequences, and a review phase that checked both recorded runs against the
-eight product rules above before anything was called done.
+The work was two festivals. The first built the escrow and ran both flows
+on testnet: an implementation phase of five sequences, and a review phase
+that checked both recorded runs against the eight product rules above
+before anything was called done. The second added the fill-claim check,
+the `verify` command, the threat model, the submission text, and the demo
+video, and ended in a review that re-ran the tests and `verify` from a
+clean clone.
 
-Each sequence began by pinning a decision into `docs/decisions/` and ended
-with its own test, review, and iterate steps, so every function in this
-crate traces back to a written decision and a review that passed. The
-agents that executed the plan worked from `fest next`, and the plan,
-decisions, and checks stayed in files and Git between sessions.
+Design decisions were pinned in `docs/decisions/` before the code that
+implements them, and every sequence ended with its own test, review, and
+iterate steps. The agents that executed the plan worked from `fest next`,
+and the plan, decisions, and checks stayed in files and Git between
+sessions.
 
 Festival is at [fest.build](https://fest.build/).
 

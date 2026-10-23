@@ -81,8 +81,9 @@ Rust, on `frost-core` and `frost-rerandomized` 3.0.0, `reddsa` 0.5.2,
 `zcash_client_backend` 0.25.0, and `zcash_client_sqlite` 0.23.0, with a
 public light server and no local node. All code was written from 2026-10-20
 onward. The work was planned and executed with Festival and its `fest` CLI:
-each sequence of work pinned a decision in `docs/decisions/` before code,
-and ended with its own tests and review
+design decisions were pinned in `docs/decisions/` before the code that
+implements them, and every sequence of work ended with its own tests and
+review
 ([Built with Festival](https://github.com/lancekrogers/ironwood-intent-escrow#built-with-festival)).
 
 ## Limitations

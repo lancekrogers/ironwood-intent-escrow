@@ -36,24 +36,31 @@ pub struct ZecTx {
 
 /// The four transactions of the two runs, in the order they were mined.
 pub const ZEC_TXS: [ZecTx; 4] = [
-    zec_tx("fill.fund.tx", "fill.json", "fund"),
-    zec_tx("fill.spend.tx", "fill.json", "spend"),
-    zec_tx("refund.fund.tx", "refund.json", "fund"),
-    zec_tx("refund.spend.tx", "refund.json", "spend"),
-];
-
-const fn zec_tx(file: &'static str, record: &'static str, step: &'static str) -> ZecTx {
-    let (txid_field, height_field) = match step.as_bytes() {
-        b"fund" => ("fund_txid", "fund_mined_height"),
-        _ => ("spend_txid", "spend_mined_height"),
-    };
     ZecTx {
-        file,
-        record,
-        txid_field,
-        height_field,
-    }
-}
+        file: "fill.fund.tx",
+        record: "fill.json",
+        txid_field: "fund_txid",
+        height_field: "fund_mined_height",
+    },
+    ZecTx {
+        file: "fill.spend.tx",
+        record: "fill.json",
+        txid_field: "spend_txid",
+        height_field: "spend_mined_height",
+    },
+    ZecTx {
+        file: "refund.fund.tx",
+        record: "refund.json",
+        txid_field: "fund_txid",
+        height_field: "fund_mined_height",
+    },
+    ZecTx {
+        file: "refund.spend.tx",
+        record: "refund.json",
+        txid_field: "spend_txid",
+        height_field: "spend_mined_height",
+    },
+];
 
 /// The records directory, loaded.
 pub struct Records {
