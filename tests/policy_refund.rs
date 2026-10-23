@@ -24,9 +24,10 @@ mod policy {
         runs_file, throwaway_address, FailingRpc, MemClaims, PanickingRpc, StoredRpc, ESCROW_VALUE,
     };
     use ironwood_intent_escrow::attest::{check_payload, NearRpc};
-    use ironwood_intent_escrow::claims::NoClaims;
+    use ironwood_intent_escrow::claims::{ClaimStore, FillClaim, NoClaims};
     use ironwood_intent_escrow::cosign::Share;
     use ironwood_intent_escrow::policy::RefundGuard;
+    use ironwood_intent_escrow::quote::QuoteId;
     use serde_json::Value;
 
     #[test]
@@ -301,6 +302,31 @@ mod policy {
             };
             let (deadline, payer) = refund_round2(&e, &quote, &refund, &facts, EXPIRY, &guard);
             assert!(deadline.is_ok() && payer.is_ok());
+        }
+    }
+
+    /// A claim store that cannot be read.
+    struct UnreadableClaims;
+
+    impl ClaimStore for UnreadableClaims {
+        fn claim(&self, _quote_id: &QuoteId) -> Result<Option<FillClaim>, Error> {
+            Err(Error::Claim("unreadable".into()))
+        }
+    }
+
+    #[test]
+    fn refund_refused_when_the_claim_store_cannot_be_read() {
+        let mut e = escrow();
+        let quote = recorded_fill_quote(1);
+        let (refund, facts) = refund_for(&mut e, &quote, EXPIRY);
+        let guard = RefundGuard {
+            claims: &UnreadableClaims,
+            rpc: &PanickingRpc,
+            banned: recorded_refund_banned(),
+        };
+        let (deadline, payer) = refund_round2(&e, &quote, &refund, &facts, EXPIRY, &guard);
+        for err in [refused(deadline), refused(payer)] {
+            assert!(matches!(err, Error::Claim(_)), "{err}");
         }
     }
 

@@ -186,6 +186,17 @@ mod tests {
     }
 
     #[test]
+    fn claims_refuse_a_file_that_does_not_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        let quote_id = QuoteId::from_bytes([7; 32]);
+        fs::write(claim_path(dir.path(), &quote_id), b"{\"quote_id\": 1").unwrap();
+        let err = DirClaimStore::new(dir.path()).claim(&quote_id).unwrap_err();
+        assert!(matches!(err, Error::Claim(_)), "{err}");
+        let err = write_claim(dir.path(), &claim("HashA")).unwrap_err();
+        assert!(matches!(err, Error::Claim(_)), "{err}");
+    }
+
+    #[test]
     fn claims_refuse_a_file_that_names_another_quote() {
         let dir = tempfile::tempdir().unwrap();
         write_claim(dir.path(), &claim("HashA")).unwrap();
