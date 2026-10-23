@@ -367,14 +367,16 @@ says so and records what was measured instead.
 
 This repository was planned and executed with
 [Festival](https://github.com/Obedience-Corp/festival), a vibe engineering
-framework, and its [`fest`](https://github.com/Obedience-Corp/fest) CLI.
-The work was two festivals. The first built the escrow and ran both flows
-on testnet: an implementation phase of five sequences, and a review phase
-that checked both recorded runs against the eight product rules above
-before anything was called done. The second added the fill-claim check,
-the `verify` command, the threat model, the submission text, and the demo
-video, and ended in a review that re-ran the tests and `verify` from a
-clean clone.
+framework, and its [`fest`](https://github.com/Obedience-Corp/fest) CLI. Two
+festivals did the work, and `fest` recorded every task, review, and gate as
+it happened. The replays below are those records, played back.
+
+<p align="center">
+  <a href="docs/replays/ironwood-intent-escrow-II0001.gif"><img src="docs/replays/ironwood-intent-escrow-II0001.gif" alt="Replay of the ironwood-intent-escrow festival: five implementation sequences and a review phase advancing to 100%" width="49%"></a>
+  <a href="docs/replays/zecathon-submission-ZS0001.gif"><img src="docs/replays/zecathon-submission-ZS0001.gif" alt="Replay of the zecathon-submission festival: fill claims, verify and docs, demo video, and a review phase advancing to 100%" width="49%"></a>
+</p>
+
+<p align="center"><em>Left: the escrow, five sequences and a review of both testnet runs against the eight product rules. Right: the fill-claim check, <code>verify</code>, the threat model, the submission text, and the demo video, reviewed from a clean clone. Click either to watch it full size.</em></p>
 
 Design decisions were pinned in `docs/decisions/` before the code that
 implements them, and every sequence ended with its own test, review, and
