@@ -105,7 +105,10 @@ review
 
 ## Demo
 
-Video: the link is added when the demo video is rendered.
+Video:
+https://github.com/lancekrogers/ironwood-intent-escrow/blob/main/demo/zecathon.mp4
+(2 min 54 s, narrated). The `verify` segment runs live; the fill and refund
+segments show the recorded runs and say so.
 
 ## Repository
 

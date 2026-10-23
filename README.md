@@ -238,6 +238,12 @@ quote's claimed NEAR payment and the refund check refused that quote as
 address appears in neither quote, in no fill record, and nowhere on NEAR.
 The refund run's output is in [`demo/logs/refund.log`](demo/logs/refund.log).
 
+Demo: [`demo/zecathon.mp4`](demo/zecathon.mp4), 2 min 54 s, narrated. The
+`verify` segment runs live; the fill and refund segments show the recorded
+runs above, and say so. `just demo` renders it from
+[`demo/narration.md`](demo/narration.md) and the tapes in `demo/tapes/`
+with obey-voice, vhs, and ffmpeg.
+
 Light server: `testnet.zec.rocks:443`. Zcash testnet is past both NU6.3
 (Ironwood, height 4,134,000) and NU7 (4,465,026).
 
@@ -348,7 +354,8 @@ tests/          integration tests; fixtures/ holds accepted and banned NEAR payl
 docs/decisions/ the decisions the code implements: shares, receipt chain, fill claims, stack
 docs/submission.md the ZECATHON submission text
 runs/           the two recorded testnet runs: records, raw transactions, NEAR payload, quotes
-demo/logs/      the refund run's output as it printed
+demo/           the narrated video, its narration, tapes, and render scripts; logs/ holds the refund run's output
+justfile        `just demo` renders the video
 ```
 
 The decision files are the implemented truth. Where they were wrong, they

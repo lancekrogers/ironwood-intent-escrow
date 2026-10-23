@@ -10,7 +10,8 @@
 #      vhs records it to demo/video/<segment>.mp4.
 #   3. The recording is padded with its last frame, or cut after its output
 #      is complete, to exactly that length, and the narration is laid over
-#      it, padded with silence. A segment whose output is not complete by
+#      it, starting 0.3 s in so its first word is clear of the cut, and
+#      padded with silence. A segment whose output is not complete by
 #      then fails the render rather than being cut short.
 # Two renders of the same narration therefore have the same length, even
 # though the Tests and Verify commands run live.
@@ -73,7 +74,7 @@ segment() {
         die "$name: the output took $(awk -v r="$recorded" -v h="$hold" 'BEGIN { print r - h }') s, past the ${length} s segment"
 
     ffmpeg -v error -y -i "$VIDEO/$name.mp4" -i "$wav" \
-        -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=${length}[v];[1:a]apad[a]" \
+        -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=${length}[v];[1:a]adelay=delays=300:all=1,apad[a]" \
         -map "[v]" -map "[a]" -t "$length" \
         -c:v libx264 -pix_fmt yuv420p -r 30 -c:a aac -ar 48000 -ac 2 \
         "$VIDEO/$name.av.mp4"
