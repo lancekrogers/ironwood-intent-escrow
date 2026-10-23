@@ -62,10 +62,10 @@ sequenceDiagram
     participant Z as Zcash
 
     P->>Z: fund the escrow note (Ironwood)
-    P->>S: quote {id, destination, asset, amount, expiry}
+    P->>S: quote (id, destination, asset, amount, expiry)
     S->>N: ft_transfer on wrap.testnet, memo = quote id
     P->>N: re-fetch the transaction from an archival node
-    P->>P: attest: amount, sender, destination, memo match; no banned values
+    P->>P: attest: amount, sender, destination, memo match, no banned values
     P->>S: FROST round 1 commitments, signing package
     S->>S: solver policy: pays me alone, for my quote, fee capped
     S->>P: round 2 share
