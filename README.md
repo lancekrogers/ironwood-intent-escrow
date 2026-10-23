@@ -22,35 +22,33 @@ solver fills the payer's quote on another chain and the note is released to
 the solver. If the fill never happens, the note is refunded after expiry to
 a fresh shielded address that the quote and the other chain never saw.
 
-From the escrow, the receipt on the other chain carries only the quote id.
-It never carries a Zcash address, a Zcash transaction id, or the zatoshi
-amount of the escrow note. That is the whole point: today's cross-chain intent flows write a
-`refundTo` shielded address onto the public chain the moment a deposit
-registers, whether or not a refund ever happens
-([Zakura, quantum unlinkability](https://zakura.com/engineering/quantum-unlinkability/)).
+The receipt on the other chain carries only the quote id. Today's
+cross-chain intent flows write a `refundTo` shielded address onto the
+public chain the moment a deposit registers, whether or not a refund ever
+happens ([Zakura, quantum unlinkability](https://zakura.com/engineering/quantum-unlinkability/)).
 This design has no such field.
 
 ## Status
 
-Proven on testnet, not on mainnet, and not audited.
+Ran on testnet only. Not audited.
 
 - Both paths ran end to end on Zcash testnet and NEAR testnet on
   2026-10-22, and the refund ran again on 2026-10-23 under the fill-claim
   check described below. The records in [`runs/`](runs/) hold four mined
   Zcash transactions, broadcast through a public light server with no
   local node.
-- **The escrow key is a trusted-dealer test key, not distributed key
-  generation.** ZIP 312 does not yet specify FROST key generation for
-  Orchard-style keys (zcash/zips#895 is open), so `keygen` derives a normal
-  spending key in memory, splits its spend authorizing key into three
-  shares, and drops the original. See
+- **The escrow key comes from a trusted dealer.** ZIP 312 does not yet
+  specify FROST key generation for Orchard-style keys (zcash/zips#895 is
+  open), so `keygen` derives a normal spending key in memory, splits its
+  spend authorizing key into three shares, and drops the original. There is
+  no distributed key generation yet. See
   [`docs/decisions/stack.md`](docs/decisions/stack.md), section "Blocked".
 - The key uses the legacy derivation (`use_qsk = false` in ZIP 2005), so the
   note is not quantum recoverable.
-- **The expiry is signer policy, not consensus.** A shielded pool has no
-  script and no timelock. The chain accepts an early refund if two shares
-  sign it. The design relies on the third share living on the payer's own
-  second device, which refuses to sign before expiry.
+- **Only the deadline signer enforces the expiry.** A shielded pool has no
+  script and no timelock, so the chain accepts an early refund if two
+  shares sign it. The third share lives on the payer's own second device,
+  which refuses to sign before expiry.
 
 ## How it works
 
@@ -66,9 +64,9 @@ spend authorizing key, signed with re-randomized FROST on RedPallas
 | `solver.key` | the solver | the release only, and only a release that pays the solver |
 | `deadline.key` | the payer's second device | the refund only, after expiry |
 
-The deadline holder is not an arbiter. It is the payer's own device, so the
-solver never holds it and no third party can lock the payer out. Its job
-is to co-sign a refund after expiry and to refuse to pay the solver.
+The deadline holder is the payer's own device, so the solver never holds
+it and no third party can lock the payer out. It co-signs a refund after
+expiry and refuses to pay the solver.
 
 ### Fill
 
@@ -150,10 +148,9 @@ Each rule is enforced in code and was checked against the recorded runs.
 ## Threat model
 
 The payer locks ZEC and wants either the quoted NEAR payment or its ZEC
-back. The solver pays on NEAR and wants the ZEC.
-The deadline device holds the third share and is the payer's own second
-device, not a neutral party. Observers watch the Zcash chain, the NEAR
-chain, or both, and see only what each chain publishes.
+back. The solver pays on NEAR and wants the ZEC. The deadline device holds
+the third share. Observers watch the Zcash chain, the NEAR chain, or both,
+and see only what each chain publishes.
 
 ### What each party can see
 
@@ -193,13 +190,14 @@ chain, or both, and see only what each chain publishes.
    searched by memo, so the refund signers learn of a fill only from the
    solver's claim, and in this deployment the claim store is on the
    payer's machine (`docs/decisions/fill-claims.md`).
-3. **An early refund.** The expiry is signer policy, not consensus. A
-   shielded pool has no script, and the chain accepts a refund that two
-   shares sign at any time (`docs/decisions/shares.md`, "No timelock").
+3. **An early refund.** A shielded pool has no script, so the chain
+   accepts a refund that two shares sign at any time. Only the deadline
+   signer's policy enforces the expiry (`docs/decisions/shares.md`, "No
+   timelock").
 4. **Against the key's dealer.** A trusted dealer generated the escrow key
-   and split it into shares, in the same process that wrote them. This is
-   not distributed key generation, because ZIP 312 does not yet specify key
-   generation for these keys (`docs/decisions/stack.md`, "Blocked").
+   and split it into shares, in the same process that wrote them. ZIP 312
+   does not yet specify distributed key generation for these keys, so none
+   was used (`docs/decisions/stack.md`, "Blocked").
 5. **Quantum recoverability.** The key uses the legacy `use_qsk = false`
    derivation of ZIP 2005 (`docs/decisions/stack.md`, "Fallback for the two
    runs").
@@ -362,8 +360,8 @@ demo/           the narrated video, its narration, tapes, and render scripts; lo
 justfile        `just demo` renders the video
 ```
 
-The decision files are the implemented truth. Where they were wrong, they
-say so and what was measured instead.
+The decision files describe what the code does. Where one was wrong, it
+says so and records what was measured instead.
 
 ## Built with Festival
 
