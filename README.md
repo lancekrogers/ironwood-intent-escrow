@@ -10,6 +10,7 @@ Never writes a Zcash address, transaction id, or amount on the other chain.</p>
 <a href="https://github.com/lancekrogers/ironwood-intent-escrow/actions/workflows/ci.yml"><img src="https://github.com/lancekrogers/ironwood-intent-escrow/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
 <img src="https://img.shields.io/badge/network-Zcash%20testnet%20%2B%20NEAR%20testnet-8a8a8a.svg" alt="Network: Zcash testnet and NEAR testnet">
+<a href="https://github.com/Obedience-Corp/festival"><img src="https://img.shields.io/badge/built%20with-Festival-7c3aed.svg" alt="Built with Festival"></a>
 </p>
 
 </div>
@@ -251,6 +252,23 @@ runs/           the two recorded testnet runs: records, raw transactions, NEAR p
 
 The decision files are the implemented truth. Where they were wrong, they
 say so and what was measured instead.
+
+## Built with Festival
+
+This repository was planned and executed with
+[Festival](https://github.com/Obedience-Corp/festival), a vibe engineering
+framework, and its [`fest`](https://github.com/Obedience-Corp/fest) CLI.
+The work was one festival with two phases: an implementation phase of five
+sequences, and a review phase that checked both recorded runs against the
+eight product rules above before anything was called done.
+
+Each sequence began by pinning a decision into `docs/decisions/` and ended
+with its own test, review, and iterate steps, so every function in this
+crate traces back to a written decision and a review that passed. The
+agents that executed the plan worked from `fest next`, and the plan,
+decisions, and checks stayed in files and Git between sessions.
+
+Festival is at [fest.build](https://fest.build/).
 
 ## What this repository does not hold
 
