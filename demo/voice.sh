@@ -9,6 +9,9 @@
 # and its Kokoro model installed. The model cache is linked in from the real
 # HOME; nothing in the real HOME is written.
 #
+# The two paths below are obey-voice's own layout, where it reads its config
+# and keeps its models. If obey-voice moves them, update them here.
+#
 # Usage: demo/voice.sh            (from the repository root)
 #        VOICE=af_sky demo/voice.sh
 set -eu

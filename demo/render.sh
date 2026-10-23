@@ -92,7 +92,12 @@ main() {
 
     # Build first, so no segment records a compile.
     cargo build -q --release --bins
-    cargo test -q --no-run 2>/dev/null
+    cargo test -q --no-run
+
+    # The Verify segment runs live. If a node is down, stop here rather
+    # than record FAIL lines.
+    ./target/release/verify >/dev/null ||
+        die "verify fails live now; not recording the Verify segment"
 
     mkdir -p "$VIDEO"
     : >"$VIDEO/list.txt"
