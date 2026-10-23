@@ -1,13 +1,23 @@
-# ironwood-intent-escrow
+<div align="center">
 
-[![CI](https://github.com/lancekrogers/ironwood-intent-escrow/actions/workflows/ci.yml/badge.svg)](https://github.com/lancekrogers/ironwood-intent-escrow/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+<h1>ironwood-intent-escrow</h1>
 
-A 2-of-3 threshold escrow on Zcash's Ironwood shielded pool. A payer locks
-ZEC in a note that any two of three FROST shares can spend. A solver fills
-the payer's quote on another chain and the note is released to the solver.
-If the fill never happens, the note is refunded after expiry to a fresh
-shielded address that the quote and the other chain never saw.
+<p><strong>A 2-of-3 FROST escrow on Zcash's Ironwood shielded pool.</strong><br>
+Fills on another chain. Refunds to a fresh shielded address.<br>
+Never writes a Zcash address, transaction id, or amount on the other chain.</p>
+
+<p>
+<a href="https://github.com/lancekrogers/ironwood-intent-escrow/actions/workflows/ci.yml"><img src="https://github.com/lancekrogers/ironwood-intent-escrow/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
+<img src="https://img.shields.io/badge/network-Zcash%20testnet%20%2B%20NEAR%20testnet-8a8a8a.svg" alt="Network: Zcash testnet and NEAR testnet">
+</p>
+
+</div>
+
+A payer locks ZEC in a note that any two of three FROST shares can spend. A
+solver fills the payer's quote on another chain and the note is released to
+the solver. If the fill never happens, the note is refunded after expiry to
+a fresh shielded address that the quote and the other chain never saw.
 
 The receipt on the other chain carries only the quote id. It never carries a
 Zcash address, a Zcash transaction id, or the zatoshi amount of the escrow
