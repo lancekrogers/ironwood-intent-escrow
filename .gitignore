@@ -5,3 +5,7 @@
 *.key
 params/
 *.fvk
+
+# The demo renders: audio and video are rebuilt by `just demo`.
+demo/audio/
+demo/video/
