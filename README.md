@@ -343,6 +343,7 @@ src/            library: frost, cosign, policy, claims, attest, checker, quote, 
 src/bin/        verify, payer_wallet, fill, refund, near_tx
 tests/          integration tests; fixtures/ holds accepted and banned NEAR payloads and a tampered copy of runs/
 docs/decisions/ the decisions the code implements: shares, receipt chain, fill claims, stack
+docs/submission.md the ZECATHON submission text
 runs/           the two recorded testnet runs: records, raw transactions, NEAR payload, quotes
 demo/logs/      the refund run's output as it printed
 ```
