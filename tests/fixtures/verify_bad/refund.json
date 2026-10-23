@@ -1,0 +1,17 @@
+{
+  "broadcast": "sent",
+  "deadline_signed_after_expiry": true,
+  "escrow_address": "utest16cuusvxg23tnypp4wrvytd46rcmw4zkzkey0dypjnj0gjeaeyu7rwxquhr4q0txeddd9gvxlyvzvl3xwt5pwehzc5rkqrjmxscarh7er",
+  "escrow_zatoshis": 4000000,
+  "fill_claim_checked": true,
+  "fill_package_still_refused": true,
+  "fill_quote_refund_refused": "not_expired",
+  "fund_mined_height": 4531486,
+  "fund_txid": "ff34db628bac27cf13a2c3e814a17261072c0138c327332ad0c6bd4154cfaf54",
+  "light_server": "https://testnet.zec.rocks:443",
+  "quote_id": "60b118afbe71a78381734a01b6755a91635bf72e1318e85e538d36a00655b42f",
+  "refund_address": "utest1fq94rk4nd5kdc7qdc4aj3qql28fw787gd6dtkqtxw9cj58egcfycewvhm6ddaudc49eqazpewpe3jr3zlnqv45sft8a5n9pt35xvhz8d",
+  "refund_address_in_quote": false,
+  "spend_mined_height": 4531498,
+  "spend_txid": "aed8163c89199d72eb0b56028cb23b0ebe0f8598cf22cf397b38a3e68c4c184f"
+}

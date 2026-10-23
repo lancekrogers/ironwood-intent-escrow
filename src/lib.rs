@@ -19,6 +19,7 @@ pub mod note;
 pub mod policy;
 pub mod quote;
 pub mod run;
+pub mod verify;
 pub mod view;
 pub mod wallet;
 

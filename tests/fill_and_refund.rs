@@ -8,53 +8,31 @@
 mod common;
 
 use common::{runs_file as runs, StoredRpc};
-use ironwood_intent_escrow::attest::{attest, check_payload, Banned, NearTxPointer};
+use ironwood_intent_escrow::attest::{attest, check_payload};
 use ironwood_intent_escrow::checker::check_zec;
-use ironwood_intent_escrow::quote::Quote;
 use ironwood_intent_escrow::run::sha256;
+use ironwood_intent_escrow::verify::{txid_of, Records};
 use ironwood_intent_escrow::Error;
 use serde_json::Value;
-use zcash_primitives::transaction::Transaction;
-use zcash_protocol::consensus::BranchId;
 
-fn record(name: &str) -> Value {
-    serde_json::from_slice(&runs(name)).unwrap()
+/// The records directory through the same loader `verify` uses, so the
+/// banned set and the pointer are the binary's own.
+fn records() -> Records {
+    Records::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runs")).unwrap()
 }
 
-fn txid_of(name: &str) -> zcash_primitives::transaction::TxId {
-    Transaction::read(&runs(name)[..], BranchId::Nu7)
-        .unwrap()
-        .txid()
-}
-
-/// The `Banned` set task 03 names: the escrow address, the refund address,
-/// both Zcash ids of the fill, and the zatoshi amount.
-fn banned(fill: &Value, refund: &Value) -> Banned {
-    Banned::new()
-        .address(fill["escrow_address"].as_str().unwrap())
-        .address(refund["refund_address"].as_str().unwrap())
-        .txid(&txid_of("fill.fund.tx"))
-        .txid(&txid_of("fill.spend.tx"))
-        .zatoshis(fill["escrow_zatoshis"].as_u64().unwrap())
-}
-
-fn pointer(fill: &Value) -> NearTxPointer {
-    NearTxPointer {
-        hash: fill["near_tx_hash"].as_str().unwrap().to_string(),
-        sender: fill["near_sender"].as_str().unwrap().to_string(),
-    }
+fn txid(name: &str) -> String {
+    txid_of(&runs(name)).unwrap().to_string()
 }
 
 #[test]
 fn fill_and_refund_banned_fixture_fails() {
-    let fill = record("fill.json");
-    let refund = record("refund.json");
-    let quote = Quote::parse(std::str::from_utf8(&runs("fill.quote.json")).unwrap()).unwrap();
+    let r = records();
     let fixture = common::fixture_bytes("near_banned.json");
     let err = check_payload(
         &common::fixture_quote(),
         &common::fixture_pointer(),
-        &banned(&fill, &refund),
+        &r.banned().unwrap(),
         &fixture,
     )
     .unwrap_err();
@@ -67,11 +45,16 @@ fn fill_and_refund_banned_fixture_fails() {
         .unwrap();
     logs.push(Value::String(format!(
         "to {}",
-        refund["refund_address"].as_str().unwrap()
+        r.refund["refund_address"].as_str().unwrap()
     )));
     let mutated = serde_json::to_vec(&payload).unwrap();
-    let err =
-        check_payload(&quote, &pointer(&fill), &banned(&fill, &refund), &mutated).unwrap_err();
+    let err = check_payload(
+        &r.fill_quote,
+        &r.pointer().unwrap(),
+        &r.banned().unwrap(),
+        &mutated,
+    )
+    .unwrap_err();
     assert!(matches!(err, Error::BannedField(_)), "{err}");
 }
 
@@ -85,53 +68,50 @@ fn fill_and_refund_zec_transactions_pass_the_checker() {
     ] {
         check_zec(&runs(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
     }
-    let fill = record("fill.json");
-    let refund = record("refund.json");
+    let r = records();
+    assert_eq!(r.fill["fund_txid"].as_str().unwrap(), txid("fill.fund.tx"));
     assert_eq!(
-        fill["fund_txid"].as_str().unwrap(),
-        txid_of("fill.fund.tx").to_string()
+        r.fill["spend_txid"].as_str().unwrap(),
+        txid("fill.spend.tx")
     );
     assert_eq!(
-        fill["spend_txid"].as_str().unwrap(),
-        txid_of("fill.spend.tx").to_string()
+        r.refund["fund_txid"].as_str().unwrap(),
+        txid("refund.fund.tx")
     );
     assert_eq!(
-        refund["fund_txid"].as_str().unwrap(),
-        txid_of("refund.fund.tx").to_string()
-    );
-    assert_eq!(
-        refund["spend_txid"].as_str().unwrap(),
-        txid_of("refund.spend.tx").to_string()
+        r.refund["spend_txid"].as_str().unwrap(),
+        txid("refund.spend.tx")
     );
 }
 
 #[test]
 fn fill_and_refund_near_payload_attests() {
-    let fill = record("fill.json");
-    let refund = record("refund.json");
+    let r = records();
     let payload = runs("fill.near.json");
     assert_eq!(
         hex::encode(sha256(&payload)),
-        fill["near_payload_sha256"].as_str().unwrap()
+        r.fill["near_payload_sha256"].as_str().unwrap()
     );
-    let quote = Quote::parse(std::str::from_utf8(&runs("fill.quote.json")).unwrap()).unwrap();
-    assert_eq!(quote.id.to_hex(), fill["quote_id"].as_str().unwrap());
+    assert_eq!(
+        r.fill_quote.id.to_hex(),
+        r.fill["quote_id"].as_str().unwrap()
+    );
     let attestation = attest(
-        &quote,
-        &pointer(&fill),
-        &banned(&fill, &refund),
+        &r.fill_quote,
+        &r.pointer().unwrap(),
+        &r.banned().unwrap(),
         &StoredRpc(payload),
     )
     .unwrap();
     assert_eq!(
         hex::encode(attestation.payload_sha256),
-        fill["near_payload_sha256"].as_str().unwrap()
+        r.fill["near_payload_sha256"].as_str().unwrap()
     );
 }
 
 #[test]
 fn fill_and_refund_refund_address_stays_off_the_fill_side() {
-    let refund = record("refund.json");
+    let refund = records().refund;
     let address = refund["refund_address"].as_str().unwrap();
     assert!(address.starts_with("utest1"), "{address}");
     for name in [
@@ -153,8 +133,7 @@ fn fill_and_refund_refund_address_stays_off_the_fill_side() {
 
 #[test]
 fn fill_and_refund_records_the_policy_outcomes() {
-    let fill = record("fill.json");
-    let refund = record("refund.json");
+    let Records { fill, refund, .. } = records();
     assert_eq!(fill["deadline_refused_release"], Value::Bool(true));
     assert_eq!(refund["fill_package_still_refused"], Value::Bool(true));
     assert_eq!(refund["deadline_signed_after_expiry"], Value::Bool(true));

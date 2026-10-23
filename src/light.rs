@@ -82,13 +82,14 @@ pub async fn broadcast(client: &mut LightClient, url: &str, tx_bytes: &[u8]) -> 
     Ok(())
 }
 
-/// Where a transaction stands: `Ok(Some(height))` once mined in the main
-/// chain, `Ok(None)` while in the mempool or on a side fork.
-pub async fn mined_height(
+/// A transaction's raw bytes and the height the server reports for it, as
+/// `get_transaction` returns them: the height is 0 or `u64::MAX` while the
+/// transaction is in the mempool or on a side fork.
+pub async fn fetch_transaction(
     client: &mut LightClient,
     url: &str,
     txid: &TxId,
-) -> Result<Option<u64>, Error> {
+) -> Result<(Vec<u8>, u64), Error> {
     let raw = client
         .get_transaction(TxFilter {
             block: None,
@@ -98,7 +99,18 @@ pub async fn mined_height(
         .await
         .map_err(|e| light_err(url, e))?
         .into_inner();
-    Ok(match raw.height {
+    Ok((raw.data, raw.height))
+}
+
+/// Where a transaction stands: `Ok(Some(height))` once mined in the main
+/// chain, `Ok(None)` while in the mempool or on a side fork.
+pub async fn mined_height(
+    client: &mut LightClient,
+    url: &str,
+    txid: &TxId,
+) -> Result<Option<u64>, Error> {
+    let (_, height) = fetch_transaction(client, url, txid).await?;
+    Ok(match height {
         0 | u64::MAX => None,
         height => Some(height),
     })

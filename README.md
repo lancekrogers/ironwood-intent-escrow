@@ -179,7 +179,33 @@ Light server: `testnet.zec.rocks:443`. Zcash testnet is past both NU6.3
 
 ## Running it
 
-### Prerequisites
+### Verify the recorded runs: no keys, no funds
+
+```text
+cargo run --release --bin verify
+```
+
+This is the first command to run. `verify` reads only `runs/` and never
+reads `~/.ironwood-intent-escrow`. It fetches the four recorded Zcash
+transactions from the light server named in `runs/fill.json`
+(`testnet.zec.rocks:443`), and the fill's NEAR payment from the archival RPC
+named there (`archival-rpc.testnet.near.org`). Then it checks:
+
+- each stored transaction's txid is the one its record names;
+- each fetched transaction is byte for byte the stored one, mined at the
+  recorded height;
+- each passes `check_zec`;
+- the fetched NEAR payload hashes to the recorded SHA-256 and passes
+  `check_payload` with the banned values of both runs;
+- the refund address is in no quote, no fill record, and not on NEAR;
+- the records hold the policy outcomes and two mined broadcasts.
+
+It prints one `PASS` or `FAIL` line per check, ends with
+`18 passed, 0 failed, 0 skipped (offline)`, and exits 0 only when every
+check passed. `--offline` runs the same checks on the stored bytes and
+skips the five fetches. It takes a few seconds once built.
+
+### Prerequisites for running the flows
 
 - Rust 1.92 or newer. There are no parameter files to download: the Halo 2
   proving key is built in process from the `orchard` crate.
@@ -222,7 +248,7 @@ rerun resumes and never funds or pays twice.
 Checks, which CI runs on every push:
 
 ```text
-cargo test                                  # 98 tests, none ignored, no network; proving tests build the Halo 2 key once per process
+cargo test                                  # 102 tests, none ignored, no network; proving tests build the Halo 2 key once per process
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```
@@ -249,11 +275,12 @@ measured facts behind each pin are in
 ## Repository layout
 
 ```text
-src/            library: frost, cosign, policy, attest, checker, quote, wallet, light, run
-src/bin/        payer_wallet, fill, refund, near_tx
-tests/          integration tests; fixtures/ holds accepted and banned NEAR payloads
-docs/decisions/ the decisions the code implements: shares, receipt chain, stack
+src/            library: frost, cosign, policy, claims, attest, checker, quote, wallet, light, run, verify
+src/bin/        verify, payer_wallet, fill, refund, near_tx
+tests/          integration tests; fixtures/ holds accepted and banned NEAR payloads and a tampered copy of runs/
+docs/decisions/ the decisions the code implements: shares, receipt chain, fill claims, stack
 runs/           the two recorded testnet runs: records, raw transactions, NEAR payload, quotes
+demo/logs/      the refund run's output as it printed
 ```
 
 The decision files are the implemented truth. Where they were wrong, they
