@@ -15,7 +15,7 @@ use std::process::ExitCode;
 use ironwood_intent_escrow::address::escrow_address;
 use ironwood_intent_escrow::attest::{Attestation, Banned, NearTxPointer, ARCHIVAL_RPC};
 use ironwood_intent_escrow::checker::check_zec;
-use ironwood_intent_escrow::claims::{write_claim, FillClaim};
+use ironwood_intent_escrow::claims::{write_claim, DirClaimStore, FillClaim};
 use ironwood_intent_escrow::cosign::SignerId;
 use ironwood_intent_escrow::frost::{aggregate, round1};
 use ironwood_intent_escrow::light::{connect, LightClient, SCAN_SERVER};
@@ -25,7 +25,7 @@ use ironwood_intent_escrow::note::{
 };
 use ironwood_intent_escrow::policy::{
     deadline_sign, payer_release, release_ovk, signing_package, solver_release, DeadlineSigner,
-    PayerSigner, SolverSigner,
+    PayerSigner, RefundGuard, SolverSigner,
 };
 use ironwood_intent_escrow::quote::Quote;
 use ironwood_intent_escrow::run::*;
@@ -240,7 +240,7 @@ fn sign_release(
     let release_key = release_ovk(&ctx.escrow_fvk);
     let spend = spend_pczt(NETWORK, inputs, &outputs, &quote.id, &release_key)?;
     let facts = verify_package(&spend.pczt, &ctx.escrow_fvk)?;
-    let refused = deadline_refuses(ctx, quote, &spend.pczt, &facts)?;
+    let refused = deadline_refuses(ctx, quote, &spend.pczt, &facts, banned, rpc)?;
     ctx.state.deadline_refused_release = Some(refused);
     let pczt_bytes = spend.pczt.clone().serialize();
     let pczt_bytes = pczt_bytes.map_err(|e| Error::Pczt(format!("{e:?}")))?;
@@ -286,11 +286,15 @@ fn release_outputs(ctx: &Ctx, inputs: &NoteInputs) -> Result<[SpendOutput; 1], E
 }
 
 /// Whether the deadline device returns `refused_release` for the release.
+/// It is handed its real refund guard; the refusal comes first, so the guard
+/// is never consulted.
 fn deadline_refuses(
     ctx: &Ctx,
     quote: &Quote,
     pczt: &Pczt,
     facts: &PackageFacts,
+    banned: &Banned,
+    rpc: &ArchivalRpc,
 ) -> Result<bool, Error> {
     let deadline = DeadlineSigner::new(
         share(&ctx.paths, SignerId::Deadline)?,
@@ -298,10 +302,16 @@ fn deadline_refuses(
         ctx.wallet.refund_fvk()?,
         &ctx.solver,
     )?;
+    let claims = DirClaimStore::new(ctx.paths.claims());
+    let guard = RefundGuard {
+        claims: &claims,
+        rpc,
+        banned: banned.clone(),
+    };
     let (nonces, deadline_commitments) = round1(&share(&ctx.paths, SignerId::Deadline)?);
     let (_, payer_commitments) = round1(&share(&ctx.paths, SignerId::Payer)?);
     let package = signing_package(facts, vec![payer_commitments, deadline_commitments]);
-    let result = deadline_sign(&deadline, quote, pczt, nonces, &package, now_unix());
+    let result = deadline_sign(&deadline, quote, pczt, nonces, &package, now_unix(), &guard);
     Ok(matches!(result, Err(Error::RefusedRelease)))
 }
 

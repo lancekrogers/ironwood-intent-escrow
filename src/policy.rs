@@ -5,6 +5,10 @@
 //!   (`attest`), and only for a package that pays the solver the quote.
 //! - The deadline device, the payer's second device, never signs a package
 //!   that pays the solver. It signs only a refund after the quote's expiry.
+//! - Both refund signers, the payer and the deadline device, look for a fill
+//!   claim for the quote last, through a [`RefundGuard`]. A claimed NEAR
+//!   payment that attests is `quote_paid`; one they cannot fetch is
+//!   `claim_unverified` (`docs/decisions/fill-claims.md`).
 //! - A refund is built inside the payer's wallet: the address is allocated
 //!   from the refund key when the package is built, and the output is
 //!   encrypted to the refund OVK, which the solver does not hold.
@@ -26,7 +30,8 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_protocol::value::Zatoshis;
 
 use crate::address::require_ironwood_only;
-use crate::attest::{attest, Attestation, Banned, NearRpc, NearTxPointer};
+use crate::attest::{attest, check_payload, Attestation, Banned, NearRpc, NearTxPointer};
+use crate::claims::ClaimStore;
 use crate::cosign::{Commitments, Share, SignerId, SigningPackage};
 use crate::error::Error;
 use crate::frost::{round2, ShareFile};
@@ -197,6 +202,72 @@ pub fn payer_release(
     Ok((round2(&signer.share, nonces, package)?, attestation))
 }
 
+/// What a refund signer reads last, before it signs: the fill-claim store,
+/// its own NEAR RPC, and the banned values of the escrow note being refunded
+/// (the escrow address, the transaction that funded the note, and its
+/// zatoshi amount). `docs/decisions/fill-claims.md`.
+pub struct RefundGuard<'a> {
+    /// Where the solver's fill claims are.
+    pub claims: &'a dyn ClaimStore,
+    /// The signer's own RPC. A claim's `rpc_url` is never used.
+    pub rpc: &'a dyn NearRpc,
+    /// The values `check_payload` refuses in the fetched payment.
+    pub banned: Banned,
+}
+
+/// The fill-claim check, the four outcomes of `fill-claims.md`:
+///
+/// 1. no claim for the quote: `Ok`;
+/// 2. a claim, and the RPC fails or answers with anything but a JSON-RPC
+///    result: `claim_unverified`;
+/// 3. a claim whose fetched payment fails `check_payload`: the claim is
+///    false, `Ok`;
+/// 4. a claim whose fetched payment passes `check_payload`: `quote_paid`.
+///
+/// It calls `rpc.tx` and `check_payload` separately, never `attest`,
+/// because a failed fetch and a failed check mean opposite things.
+pub fn check_not_paid(guard: &RefundGuard, quote: &Quote) -> Result<(), Error> {
+    let Some(claim) = guard.claims.claim(&quote.id)? else {
+        return Ok(());
+    };
+    let pointer = claim.pointer();
+    let payload = guard
+        .rpc
+        .tx(&pointer.hash, &pointer.sender)
+        .map_err(|e| Error::ClaimUnverified(e.to_string()))?;
+    rpc_answered(&payload)?;
+    match check_payload(quote, &pointer, &guard.banned, &payload) {
+        Ok(()) => Err(Error::QuotePaid),
+        Err(_) => Ok(()),
+    }
+}
+
+/// A fetched body counts as an answer only when it is JSON carrying a
+/// `result` and no `error`. The archival node answers a hash it has not
+/// observed, a timeout, or a rate limit with an HTTP 4xx JSON-RPC error,
+/// which `ArchivalRpc` returns as a body; none of those says the quote was
+/// not paid.
+fn rpc_answered(payload: &[u8]) -> Result<(), Error> {
+    let body: serde_json::Value = serde_json::from_slice(payload)
+        .map_err(|_| Error::ClaimUnverified("the RPC answer is not JSON".into()))?;
+    if let Some(error) = body.get("error") {
+        let name = error
+            .pointer("/cause/name")
+            .or_else(|| error.get("name"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unnamed");
+        return Err(Error::ClaimUnverified(format!(
+            "the RPC answered with the error {name}"
+        )));
+    }
+    if body.get("result").is_none() {
+        return Err(Error::ClaimUnverified(
+            "the RPC answer has no result".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// The deadline device's round 2, in the order `shares.md` fixes:
 ///
 /// 1. the package must be the PCZT's own (`package_mismatch`);
@@ -206,7 +277,10 @@ pub fn payer_release(
 /// 4. `now` must be at or past `quote.expiry_unix`, the expiry of the quote
 ///    the device was handed, never one read from the memo (`not_expired`);
 /// 5. every output must be an address the payer's refund key detects
-///    (`not_a_refund`).
+///    (`not_a_refund`);
+/// 6. no fill claim for the quote attests (`quote_paid`) or goes unchecked
+///    (`claim_unverified`), through [`check_not_paid`]. Steps 1 to 5 need
+///    no network, so a refused package never reaches the RPC.
 pub fn deadline_sign(
     signer: &DeadlineSigner,
     quote: &Quote,
@@ -214,17 +288,20 @@ pub fn deadline_sign(
     nonces: SigningNonces,
     package: &SigningPackage,
     now: u64,
+    guard: &RefundGuard,
 ) -> Result<Share, Error> {
     let facts = check_package(pczt, package, &signer.escrow_fvk)?;
     if facts.outputs.iter().any(|o| o.address == signer.solver) {
         return Err(Error::RefusedRelease);
     }
     check_refund(quote, pczt, &signer.escrow_fvk, &signer.refund_fvk, now)?;
+    check_not_paid(guard, quote)?;
     round2(&signer.share, nonces, package)
 }
 
 /// The payer's round 2 for a refund: the same checks as the deadline
-/// device, against the payer's own refund key.
+/// device, against the payer's own refund key, ending in the same fill-claim
+/// check.
 pub fn payer_refund(
     signer: &PayerSigner,
     quote: &Quote,
@@ -232,12 +309,14 @@ pub fn payer_refund(
     nonces: SigningNonces,
     package: &SigningPackage,
     now: u64,
+    guard: &RefundGuard,
 ) -> Result<Share, Error> {
     let facts = check_package(pczt, package, &signer.escrow_fvk)?;
     if facts.outputs.iter().any(|o| o.address == signer.solver) {
         return Err(Error::NotARefund("the package pays the solver".into()));
     }
     check_refund(quote, pczt, &signer.escrow_fvk, &signer.refund_fvk, now)?;
+    check_not_paid(guard, quote)?;
     round2(&signer.share, nonces, package)
 }
 

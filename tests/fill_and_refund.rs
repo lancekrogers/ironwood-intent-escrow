@@ -7,9 +7,8 @@
 
 mod common;
 
-use std::path::PathBuf;
-
-use ironwood_intent_escrow::attest::{attest, check_payload, Banned, NearRpc, NearTxPointer};
+use common::{runs_file as runs, StoredRpc};
+use ironwood_intent_escrow::attest::{attest, check_payload, Banned, NearTxPointer};
 use ironwood_intent_escrow::checker::check_zec;
 use ironwood_intent_escrow::quote::Quote;
 use ironwood_intent_escrow::run::sha256;
@@ -17,13 +16,6 @@ use ironwood_intent_escrow::Error;
 use serde_json::Value;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::BranchId;
-
-fn runs(name: &str) -> Vec<u8> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("runs")
-        .join(name);
-    std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-}
 
 fn record(name: &str) -> Value {
     serde_json::from_slice(&runs(name)).unwrap()
@@ -44,17 +36,6 @@ fn banned(fill: &Value, refund: &Value) -> Banned {
         .txid(&txid_of("fill.fund.tx"))
         .txid(&txid_of("fill.spend.tx"))
         .zatoshis(fill["escrow_zatoshis"].as_u64().unwrap())
-}
-
-struct StoredRpc(Vec<u8>);
-
-impl NearRpc for StoredRpc {
-    fn url(&self) -> &str {
-        "runs/fill.near.json"
-    }
-    fn tx(&self, _hash: &str, _sender: &str) -> Result<Vec<u8>, Error> {
-        Ok(self.0.clone())
-    }
 }
 
 fn pointer(fill: &Value) -> NearTxPointer {

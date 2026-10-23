@@ -61,6 +61,7 @@ mod policy {
             deadline_nonces,
             &package,
             u64::MAX,
+            &no_claims_guard(),
         )
         .unwrap_err();
         assert!(matches!(err, Error::RefusedRelease), "{err}");

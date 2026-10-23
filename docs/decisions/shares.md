@@ -91,7 +91,8 @@ Sequence 02 defines these message types in `src/cosign.rs`.
 
 ## The refusal rule for `deadline_sign`
 
-`deadline_sign(quote, pczt, nonces, package, now)` in sequence 04:
+`deadline_sign(quote, pczt, nonces, package, now, guard)` in sequence 04,
+with the `guard` added by festival ZS0001 (`docs/decisions/fill-claims.md`):
 
 1. Check `package.pczt_hash` is the hash of `pczt` and `package.sighash` is
    the checker view's sighash. Otherwise `package_mismatch`.
@@ -103,7 +104,15 @@ Sequence 02 defines these message types in `src/cosign.rs`.
    only the quote id.
 5. If any new shielded output is not an address the payer's refund full
    viewing key detects, return `not_a_refund`.
-6. Otherwise produce the round 2 share.
+6. Look up a fill claim for `quote.id`. If one exists and its payment
+   attests, return `quote_paid`. If it exists and cannot be fetched, return
+   `claim_unverified`. Otherwise produce the round 2 share. The payment is
+   re-fetched from the signer's own archival RPC and checked with
+   `check_payload`; a claim whose payment fails that check is false and
+   does not block the refund. Steps 1 to 5 need no network, so a package
+   they refuse never reaches the RPC. `check_not_paid` in `src/policy.rs`
+   implements this step, and `docs/decisions/fill-claims.md` pins its four
+   outcomes.
 
 The deadline signer never signs a release. Its share is not collected for
 the fill, and the fill binary records that it returned `refused_release`.
@@ -114,8 +123,9 @@ the fill, and the fill binary records that it returned `refused_release`.
   `attest` succeeds on the NEAR transaction per
   `docs/decisions/receipt-chain.md`. The solver signs whenever it wants to
   be paid.
-- Refund (note to a fresh payer address): payer and deadline. The solver
-  share is not used.
+- Refund (note to a fresh payer address): payer and deadline. Both run the
+  fill-claim check of step 6 before they sign, so neither signs a refund of
+  a quote whose claimed NEAR payment attests. The solver share is not used.
 - One share alone: nothing the chain accepts.
 
 ## Key material

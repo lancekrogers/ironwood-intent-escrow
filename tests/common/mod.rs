@@ -289,3 +289,75 @@ pub fn offline_wallet(dir: &std::path::Path) -> ironwood_intent_escrow::wallet::
     ironwood_intent_escrow::wallet::PayerWallet::create(dir, Network::TestNetwork, &birthday)
         .unwrap()
 }
+
+/// A file from the repository's `runs/`, the recorded testnet runs. A
+/// missing record fails the test; it never skips.
+pub fn runs_file(name: &str) -> Vec<u8> {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("runs")
+        .join(name);
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// A NEAR RPC that answers every call with stored bytes, such as
+/// `runs/fill.near.json`.
+pub struct StoredRpc(pub Vec<u8>);
+
+impl ironwood_intent_escrow::attest::NearRpc for StoredRpc {
+    fn url(&self) -> &str {
+        "runs/fill.near.json"
+    }
+    fn tx(&self, _hash: &str, _sender: &str) -> Result<Vec<u8>, ironwood_intent_escrow::Error> {
+        Ok(self.0.clone())
+    }
+}
+
+/// A NEAR RPC that is down.
+pub struct FailingRpc;
+
+impl ironwood_intent_escrow::attest::NearRpc for FailingRpc {
+    fn url(&self) -> &str {
+        "failing://near"
+    }
+    fn tx(&self, _hash: &str, _sender: &str) -> Result<Vec<u8>, ironwood_intent_escrow::Error> {
+        Err(ironwood_intent_escrow::Error::Attestation("down".into()))
+    }
+}
+
+/// A NEAR RPC that must never be called: it panics if it is.
+pub struct PanickingRpc;
+
+impl ironwood_intent_escrow::attest::NearRpc for PanickingRpc {
+    fn url(&self) -> &str {
+        "panicking://near"
+    }
+    fn tx(&self, _hash: &str, _sender: &str) -> Result<Vec<u8>, ironwood_intent_escrow::Error> {
+        panic!("the NEAR RPC was called")
+    }
+}
+
+/// An in-memory fill-claim store.
+#[derive(Default)]
+pub struct MemClaims(
+    pub  std::collections::HashMap<
+        ironwood_intent_escrow::quote::QuoteId,
+        ironwood_intent_escrow::claims::FillClaim,
+    >,
+);
+
+impl MemClaims {
+    /// A store holding exactly `claim`.
+    pub fn with(claim: ironwood_intent_escrow::claims::FillClaim) -> Self {
+        MemClaims([(claim.quote_id, claim)].into_iter().collect())
+    }
+}
+
+impl ironwood_intent_escrow::claims::ClaimStore for MemClaims {
+    fn claim(
+        &self,
+        quote_id: &ironwood_intent_escrow::quote::QuoteId,
+    ) -> Result<Option<ironwood_intent_escrow::claims::FillClaim>, ironwood_intent_escrow::Error>
+    {
+        Ok(self.0.get(quote_id).cloned())
+    }
+}

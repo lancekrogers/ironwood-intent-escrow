@@ -137,6 +137,16 @@ pub enum Error {
     #[error("refused_release: the deadline device never signs a payout to the solver")]
     RefusedRelease,
 
+    /// A refund signer found a fill claim for the quote and the NEAR payment
+    /// it names attests: the quote was filled, so it is not refunded.
+    #[error("quote_paid: the quote was paid on NEAR")]
+    QuotePaid,
+
+    /// A refund signer found a fill claim it could not check: the RPC failed
+    /// or answered with an error. It does not sign until it can tell.
+    #[error("claim_unverified: {0}")]
+    ClaimUnverified(String),
+
     /// A package presented as a refund is not one.
     #[error("not_a_refund: {0}")]
     NotARefund(String),
