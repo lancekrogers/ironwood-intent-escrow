@@ -367,9 +367,7 @@ says so and records what was measured instead.
 
 This repository was planned and executed with
 [Festival](https://github.com/Obedience-Corp/festival), a vibe engineering
-framework, and its [`fest`](https://github.com/Obedience-Corp/fest) CLI. Two
-festivals did the work, and `fest` recorded every task, review, and gate as
-it happened. The replays below are those records, played back.
+framework, and its [`fest`](https://github.com/Obedience-Corp/fest) CLI.
 
 <p align="center">
   <a href="docs/replays/ironwood-intent-escrow-II0001.gif"><img src="docs/replays/ironwood-intent-escrow-II0001.gif" alt="Replay of the ironwood-intent-escrow festival: five implementation sequences and a review phase advancing to 100%" width="49%"></a>
