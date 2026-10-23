@@ -158,6 +158,13 @@ fn fill_and_refund_records_the_policy_outcomes() {
     assert_eq!(fill["deadline_refused_release"], Value::Bool(true));
     assert_eq!(refund["fill_package_still_refused"], Value::Bool(true));
     assert_eq!(refund["deadline_signed_after_expiry"], Value::Bool(true));
+    // The refund was signed under the fill-claim guard, and the guard
+    // refused the fill's quote as paid (docs/decisions/fill-claims.md).
+    assert_eq!(refund["fill_claim_checked"], Value::Bool(true));
+    assert_eq!(
+        refund["fill_quote_refund_refused"],
+        Value::String("quote_paid".into())
+    );
     for r in [&fill, &refund] {
         let broadcast = r["broadcast"].as_str().unwrap();
         assert!(broadcast == "sent" || broadcast == "blocked", "{broadcast}");

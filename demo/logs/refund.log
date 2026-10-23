@@ -1,0 +1,24 @@
+fill quote 490acaf70aaf0d4e87944189c9be33930f90f6ebd3c5c0a61666510216a45be5: checking its fill claim
+fill quote 490acaf70aaf0d4e87944189c9be33930f90f6ebd3c5c0a61666510216a45be5: refund refused, quote_paid
+waiting for ff34db628bac27cf13a2c3e814a17261072c0138c327332ad0c6bd4154cfaf54 to be mined
+waiting for ff34db628bac27cf13a2c3e814a17261072c0138c327332ad0c6bd4154cfaf54 to be mined
+waiting for ff34db628bac27cf13a2c3e814a17261072c0138c327332ad0c6bd4154cfaf54 to be mined
+waiting for ff34db628bac27cf13a2c3e814a17261072c0138c327332ad0c6bd4154cfaf54 to be mined
+fund ff34db628bac27cf13a2c3e814a17261072c0138c327332ad0c6bd4154cfaf54 mined at 4531486
+waiting for the escrow note
+waiting for the escrow note
+waiting for the escrow note
+waiting for the escrow note
+waiting for the escrow note
+waiting for the escrow note
+quote 60b118afbe71a78381734a01b6755a91635bf72e1318e85e538d36a00655b42f expired at 1792735048, now 1792735108
+refund built to a fresh address from the payer wallet's refund key
+fill claim for this quote: none
+deadline device signed: past expiry, pays the refund key, no paid fill claim
+payer signed the refund
+waiting for aed8163c89199d72eb0b56028cb23b0ebe0f8598cf22cf397b38a3e68c4c184f to be mined
+waiting for aed8163c89199d72eb0b56028cb23b0ebe0f8598cf22cf397b38a3e68c4c184f to be mined
+waiting for aed8163c89199d72eb0b56028cb23b0ebe0f8598cf22cf397b38a3e68c4c184f to be mined
+refund aed8163c89199d72eb0b56028cb23b0ebe0f8598cf22cf397b38a3e68c4c184f mined at 4531498
+fill release package: deadline device refused, refused_release = true
+records written to runs

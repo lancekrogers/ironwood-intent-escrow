@@ -33,8 +33,10 @@ This design has no such field.
 Proven on testnet, not on mainnet, and not audited.
 
 - Both paths ran end to end on Zcash testnet and NEAR testnet on
-  2026-10-22. Four Zcash transactions were mined through a public light
-  server with no local node. The records are in [`runs/`](runs/).
+  2026-10-22, and the refund ran again on 2026-10-23 under the fill-claim
+  check described below. The records in [`runs/`](runs/) hold four mined
+  Zcash transactions, broadcast through a public light server with no
+  local node.
 - **The escrow key is a trusted-dealer test key, not distributed key
   generation.** ZIP 312 does not yet specify FROST key generation for
   Orchard-style keys (zcash/zips#895 is open), so `keygen` derives a normal
@@ -101,7 +103,7 @@ sequenceDiagram
     Note over P: quote expires, no fill
     P->>P: allocate a fresh address from the refund key, inside the wallet
     P->>D: FROST round 1 commitments, signing package
-    D->>D: not paying the solver, quote expired, output is mine
+    D->>D: not paying the solver, quote expired, output is mine, no paid fill claim
     D->>P: round 2 share
     P->>Z: aggregate two shares, broadcast the refund
 ```
@@ -154,8 +156,8 @@ Transaction ids are shortened here; the full values are in the records.
 |---|---|---|---|
 | Fill | fund escrow | `20058089…e03b0512` | 4,530,559 |
 | Fill | release to solver | `f094fdf4…9c6df61b` | 4,530,577 |
-| Refund | fund escrow | `46ebf892…66104b08` | 4,530,586 |
-| Refund | refund to fresh address | `7fcc618a…c7344b4e` | 4,530,598 |
+| Refund | fund escrow | `ff34db62…54cfaf54` | 4,531,486 |
+| Refund | refund to fresh address | `aed8163c…8c4c184f` | 4,531,498 |
 
 The fill's NEAR payment is
 [`7J1bzUpXaJo2oHqtbXHh5sme7FXhucexpiQiQ7fkG7uk`](https://testnet.nearblocks.io/txns/7J1bzUpXaJo2oHqtbXHh5sme7FXhucexpiQiQ7fkG7uk)
@@ -165,8 +167,12 @@ from `ironwood-solver-a5slbw.testnet`, re-fetched from
 
 Policy outcomes recorded in the runs: the deadline device refused the
 release, still refused the fill's package during the refund run, and signed
-the refund only after expiry. The refund address appears in neither quote,
-in no fill record, and nowhere on NEAR.
+the refund only after expiry and after finding no fill claim for the
+refund's quote. Before funding the refund, the run re-fetched the fill
+quote's claimed NEAR payment and the refund check refused that quote as
+`quote_paid` (`fill_quote_refund_refused` in `refund.json`). The refund
+address appears in neither quote, in no fill record, and nowhere on NEAR.
+The refund run's output is in [`demo/logs/refund.log`](demo/logs/refund.log).
 
 Light server: `testnet.zec.rocks:443`. Zcash testnet is past both NU6.3
 (Ironwood, height 4,134,000) and NU7 (4,465,026).
@@ -216,7 +222,7 @@ rerun resumes and never funds or pays twice.
 Checks, which CI runs on every push:
 
 ```text
-cargo test                                  # 84 tests, none ignored, no network; proving tests build the Halo 2 key once per process
+cargo test                                  # 95 tests, none ignored, no network; proving tests build the Halo 2 key once per process
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```
