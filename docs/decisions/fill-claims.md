@@ -103,16 +103,17 @@ refused before the claim store is read, so no network call happens for a
 package that would be refused anyway.
 
 Then, as step 6 of the refusal rule in `shares.md`, the signer looks up a
-claim for `quote.id`. A claim store it cannot read, or a claim file that
-does not parse or names another quote, is refused with `claim` before
-anything is fetched. Once the store answers, there are exactly four
+claim for `quote.id`. A claim file it cannot read is refused with `io`, and
+a claim file that does not parse or names another quote is refused with
+`claim`, before anything is fetched. Once the store answers, there are exactly four
 outcomes:
 
 1. **No claim file.** Sign.
 2. **A claim, and no answer.** `NearRpc::tx` fails (transport, TLS, HTTP
-   5xx, timeout), or it returns a body that is not JSON or that carries a
-   JSON-RPC `error` of any kind, including the HTTP 408 `TIMEOUT_ERROR` a
-   rate-limited, lagging, or unobserved lookup returns. Refuse with
+   5xx, timeout), or it returns a body that is not JSON, that carries a
+   JSON-RPC `error` of any kind, or that has no `result`. That includes the
+   HTTP 408 `TIMEOUT_ERROR` a rate-limited, lagging, or unobserved lookup
+   returns. Refuse with
    `claim_unverified`. The device cannot tell whether the quote was paid,
    so it does not sign. The operator reruns later.
 3. **A claim, a fetched result, and `check_payload` fails.** The claim is

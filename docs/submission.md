@@ -9,20 +9,20 @@ unshielding on the way through."
 
 A payer locks ZEC in one shielded Ironwood note that any two of three FROST
 shares can spend, and a solver fills the payer's quote by paying on NEAR,
-where the payment carries only a 32-byte quote id and never a Zcash address,
-transaction id, or amount. Cross-chain intent flows today write a refund
-address onto the public chain the moment a deposit registers; here the
-refund address is made inside the payer's wallet only when a refund is
-built, and it never reaches the quote or NEAR. Both paths ran end to end on
-Zcash testnet and NEAR testnet, and one command re-checks all four Zcash
-transactions and the NEAR payment against live public nodes with no keys or
-funds. The code was written for this hackathon: re-randomized FROST over
-RedPallas signing Ironwood spends through PCZTs, a NEAR receipt check that
-refuses any Zcash value, and a refund check that refuses a refund when the
-quote's claimed NEAR payment re-fetches and checks out. It is a testnet
-build with a trusted-dealer key, and the deadline device that co-signs
-refunds is the payer's own, so it protects the payer and an honest payer's
-automation, not a solver facing a dishonest payer.
+where the payment's only link to the escrow is a 32-byte quote id and it
+never carries a Zcash address, transaction ID, or amount. Cross-chain intent
+flows today write a refund address onto the public chain the moment a
+deposit registers; here the refund address is made inside the payer's wallet
+only when a refund is built, and it never reaches the quote or NEAR. Both
+paths ran end to end on Zcash testnet and NEAR testnet, and one command re-
+checks all four Zcash transactions and the NEAR payment against live public
+nodes with no keys or funds. The code was written for this hackathon: re-
+randomized FROST over RedPallas signing Ironwood spends through PCZTs, a
+NEAR receipt check that refuses any Zcash value, and a refund check that
+refuses a refund when the quote's claimed NEAR payment re-fetches and checks
+out. It is a testnet build with a trusted-dealer key, and the deadline
+device that co-signs refunds is the payer's own, so it protects the payer
+and an honest payer's automation, not a solver facing a dishonest payer.
 
 ## What stays private and what is public
 

@@ -20,9 +20,9 @@ solver fills the payer's quote on another chain and the note is released to
 the solver. If the fill never happens, the note is refunded after expiry to
 a fresh shielded address that the quote and the other chain never saw.
 
-The receipt on the other chain carries only the quote id. It never carries a
-Zcash address, a Zcash transaction id, or the zatoshi amount of the escrow
-note. That is the whole point: today's cross-chain intent flows write a
+From the escrow, the receipt on the other chain carries only the quote id.
+It never carries a Zcash address, a Zcash transaction id, or the zatoshi
+amount of the escrow note. That is the whole point: today's cross-chain intent flows write a
 `refundTo` shielded address onto the public chain the moment a deposit
 registers, whether or not a refund ever happens
 ([Zakura, quantum unlinkability](https://zakura.com/engineering/quantum-unlinkability/)).
@@ -65,8 +65,8 @@ spend authorizing key, signed with re-randomized FROST on RedPallas
 | `deadline.key` | the payer's second device | the refund only, after expiry |
 
 The deadline holder is not an arbiter. It is the payer's own device, so the
-solver never holds it and no third party can lock the payer out. Its only
-job is to refuse to pay the solver.
+solver never holds it and no third party can lock the payer out. Its job
+is to co-sign a refund after expiry and to refuse to pay the solver.
 
 ### Fill
 
@@ -315,8 +315,10 @@ cargo run --release --bin refund    # fund, expire, sign with payer + deadline, 
 cargo run --bin near_tx -- <tx-hash> <sender-account>   # re-fetch a NEAR transaction and print its SHA-256
 ```
 
-`fill` and `refund` save state before every broadcast or payment, so a
-rerun resumes and never funds or pays twice.
+`fill` and `refund` save their state before every broadcast and right
+after the NEAR payment, so a rerun resumes instead of funding or paying
+again. Only an interruption between the payment and that save could make a
+rerun pay twice.
 
 Checks, which CI runs on every push:
 
