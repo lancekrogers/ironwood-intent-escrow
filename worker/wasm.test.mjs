@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {initSync, request_spec, verify_responses} from './pkg/ironwood_verifier_wasm.js';
+import {initSync, request_spec, verify_responses, verify_part} from './pkg/ironwood_verifier_wasm.js';
 import {validateReport} from '../web/report.mjs';
 
 initSync({module: readFileSync(new URL('./pkg/ironwood_verifier_wasm_bg.wasm', import.meta.url))});
@@ -43,4 +43,19 @@ test('Wasm rejects a changed transaction and failed live requests', () => {
   const absent = JSON.parse(verify_responses('{}', new Uint8Array(), 'NEAR unavailable'));
   assert.equal(absent.status, 'failed');
   assert.equal(absent.checks.filter(c => c.status === 'pass' && c.scope === 'network').length, 0);
+});
+
+test('five bounded Wasm requests reproduce the complete verification report', () => {
+  const responses = recordedResponses();
+  const checks = Object.keys(responses).flatMap(part => {
+    const report = JSON.parse(verify_part(part, JSON.stringify({[part]:responses[part]}), new Uint8Array(), ''));
+    assert.equal(report.checks.length, 3);
+    return report.checks;
+  });
+  checks.push(...JSON.parse(verify_part('near', '{}', read('fill.near.json'), '')).checks);
+  assert.deepEqual(checks, verify(responses).checks);
+  assert.throws(() => verify_part('unknown', '{}', new Uint8Array(), ''));
+  const failed = JSON.parse(verify_part('fill.fund.tx', '{}', new Uint8Array(), ''));
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.checks.filter(c => c.status === 'fail').length, 2);
 });

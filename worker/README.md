@@ -3,7 +3,9 @@
 The Worker runs the same 18 checks as the native `verify` binary, using the
 shared Rust library with `default-features = false`. Wallets, signing, proving,
 native sockets, and OS randomness are excluded. Public `runs/` records are
-embedded at build time. Each click queries testnet data services; it does not
+embedded at build time. Each click makes five bounded requests (four Zcash transactions and one NEAR
+receipt), then combines their checks in the browser. This keeps the work within
+the Free plan’s small per-request CPU budget. Each click queries testnet data services; it does not
 submit a transaction or use keys or funds.
 
 At Worker startup, Rust computes and retains the checks for the immutable embedded
@@ -43,7 +45,7 @@ To test live transport on Cloudflare using your Wrangler login:
 
 ```sh
 just worker-preview
-curl http://localhost:8789/api/verify
+curl http://localhost:8789/api/verify/fill.fund.tx
 ```
 
 ## Deploy
@@ -56,8 +58,9 @@ cd worker
 npm exec -- wrangler deploy
 ```
 
-Verify `/api/verify` returns all 18 passing checks before setting its HTTPS URL
-in `web/config.json`. Publish the frontend with the repository's Pages workflow.
+Verify all five `/api/verify/<part>` endpoints return passing checks, totaling 18,
+before setting the `/api/verify` base URL and `"partitioned": true` in `web/config.json`.
+The base endpoint lists the fixed part paths. Publish the frontend with the repository's Pages workflow.
 CORS is restricted to `https://lancekrogers.github.io`; the endpoint itself is
 public. `GET /health` reports service health and source commit.
 
@@ -70,9 +73,9 @@ limits still apply. A local benchmark is not a measurement of edge CPU usage.
 
 ## Request boundaries
 
-Only `GET /api/verify` runs verification. It accepts no user-provided URLs,
+Only the five fixed `GET /api/verify/<part>` routes run verification. It accepts no user-provided URLs,
 transaction IDs, files, commands, or keys. The rate-limit binding allows
-approximately six checks per IP per minute per Cloudflare location; it is not
+approximately six requests per part per IP per minute per Cloudflare location; it is not
 a global quota. Upstream calls have 20-second timeouts and 1 MiB response limits.
 Reports are uncached and include failures rather than substituting stored bytes
 for a failed network request. A public API may itself cache blockchain data;

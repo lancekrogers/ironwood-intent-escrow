@@ -104,12 +104,24 @@ impl Fetched {
 }
 
 fn check_responses(zcash: &str, near: &[u8], near_error: &str) -> Result<Value, String> {
+    check_part(None, zcash, near, near_error)
+}
+
+fn check_part(
+    part: Option<&str>,
+    zcash: &str,
+    near: &[u8],
+    near_error: &str,
+) -> Result<Value, String> {
     let mut fetched: BTreeMap<String, Fetched> = serde_json::from_str(zcash)
         .map_err(|e| format!("invalid fetched transaction response: {e}"))?;
     let prepared = prepared();
     let records = &prepared.records;
     let mut checks = Vec::new();
     for (tx, cached) in ZEC_TXS.iter().zip(&prepared.transactions) {
+        if part.is_some_and(|name| name != tx.file) {
+            continue;
+        }
         checks.push(cached.txid.clone());
         let response = fetched
             .remove(tx.file)
@@ -126,17 +138,19 @@ fn check_responses(zcash: &str, near: &[u8], near_error: &str) -> Result<Value, 
     if !fetched.is_empty() {
         return Err("unexpected fetched transaction".into());
     }
-    let payload = if near_error.is_empty() {
-        Ok(near.to_vec())
-    } else {
-        Err(near_error.to_owned())
-    };
-    checks.push(near_recorded_check(records));
-    checks.push(near_fetched_check(records, &payload));
-    checks.push(near_attests_check(records, payload.as_deref().ok()));
-    checks.push(refund_address_check(records));
-    checks.push(policy_check(records));
-    checks.push(broadcast_check(records));
+    if part.is_none_or(|name| name == "near") {
+        let payload = if near_error.is_empty() {
+            Ok(near.to_vec())
+        } else {
+            Err(near_error.to_owned())
+        };
+        checks.push(near_recorded_check(records));
+        checks.push(near_fetched_check(records, &payload));
+        checks.push(near_attests_check(records, payload.as_deref().ok()));
+        checks.push(refund_address_check(records));
+        checks.push(policy_check(records));
+        checks.push(broadcast_check(records));
+    }
     let passed = all_passed(&checks);
     let checks: Vec<_> = checks
         .into_iter()
@@ -166,6 +180,22 @@ fn check_responses(zcash: &str, near: &[u8], near_error: &str) -> Result<Value, 
 #[wasm_bindgen]
 pub fn verify_responses(zcash: &str, near: &[u8], near_error: &str) -> Result<String, JsValue> {
     check_responses(zcash, near, near_error)
+        .map(|report| report.to_string())
+        .map_err(|error| JsValue::from_str(&error))
+}
+
+/// A bounded portion of the same report, for the Free plan's per-request CPU limit.
+#[wasm_bindgen]
+pub fn verify_part(
+    part: &str,
+    zcash: &str,
+    near: &[u8],
+    near_error: &str,
+) -> Result<String, JsValue> {
+    if part != "near" && !ZEC_TXS.iter().any(|tx| tx.file == part) {
+        return Err(JsValue::from_str("unknown verification part"));
+    }
+    check_part(Some(part), zcash, near, near_error)
         .map(|report| report.to_string())
         .map_err(|error| JsValue::from_str(&error))
 }

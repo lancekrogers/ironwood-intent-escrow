@@ -1,4 +1,4 @@
-import {validateReport, summary} from './report.mjs';
+import {validateReport, summary, combineReports, PARTS} from './report.mjs';
 const $ = id => document.getElementById(id);
 const REPO = 'https://github.com/lancekrogers/ironwood-intent-escrow';
 let config;
@@ -77,7 +77,9 @@ async function verify() {
   const button = $('verify-button'); button.disabled = true; clearReport();
   setStatus('neutral', config.mode === 'live' ? 'Checking public testnet APIs…' : 'Loading the latest published verification…', config.mode === 'live' ? 'The server is running the shared Rust verification checks in WebAssembly against public testnet data. This can take up to 30 seconds.' : 'This retrieves a timestamped report; it does not start a new chain check.');
   try {
-    const report = validateReport(await json(config.report_url, config.mode === 'live' ? 40000 : 20000));
+    const report = config.mode === 'live' && config.partitioned
+      ? combineReports(await Promise.all(PARTS.map(part => json(`${config.report_url}/${part}`, 40000))))
+      : validateReport(await json(config.report_url, config.mode === 'live' ? 40000 : 20000));
     renderReport(report);
   } catch (error) {
     setStatus('unavailable','Could not retrieve verification',`${error.name === 'TimeoutError' ? 'The request timed out.' : error.message} No successful result is claimed. You can retry or run the verifier from the repository.`);

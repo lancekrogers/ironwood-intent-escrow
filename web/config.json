@@ -1,4 +1,5 @@
 {
   "mode": "live",
-  "report_url": "https://ironwood-verifier.lancekrogers.workers.dev/api/verify"
+  "report_url": "https://ironwood-verifier.lancekrogers.workers.dev/api/verify",
+  "partitioned": true
 }

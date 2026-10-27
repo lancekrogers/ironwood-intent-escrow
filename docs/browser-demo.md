@@ -21,12 +21,13 @@ failure instead of silently retaining a previous green result.
 The frontend is hosted on GitHub Pages and calls the
 [Cloudflare Worker](../worker/README.md). The Worker compiles the shared Rust
 checks to WebAssembly, queries the ZecBlock testnet HTTPS API and NEAR archival
-RPC, and returns the same report schema. It needs no native server or credentials.
+RPC, and returns five partial reports with the same deployed revision. The browser
+requires all five parts and all 18 checks before showing a complete report. It needs no native server or credentials.
 The report links to the deployed source commit and names the data sources.
 
 `web/config.json` selects the endpoint and labels the mode explicitly:
 
-- `{"mode":"live","report_url":"https://<verifier-host>/api/verify"}` queries
+- `{"mode":"live","report_url":"https://<verifier-host>/api/verify","partitioned":true}` queries
   public testnet services when clicked.
 - `{"mode":"published","report_url":"verification.json"}` reads a previously
   generated report, explicitly labeled as not an on-demand check.
@@ -45,7 +46,7 @@ UTC timestamp and source commit. The Wasm adapter calls these same checks direct
 The browser repeats the schema and consistency
 checks before showing results and clears earlier results if a request fails.
 
-The page distinguishes fetched node evidence, transaction/receipt validation,
+The page distinguishes fetched public-service evidence, transaction/receipt validation,
 and recorded signer outcomes. The last group does not independently prove that
 a signer applied a policy. Neither mode creates a new transaction or performs
 independent consensus validation.
