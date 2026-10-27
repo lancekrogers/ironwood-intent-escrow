@@ -29,5 +29,5 @@ export function summary(report, now = Date.now()) {
   if (age === 'future') return {state:'unavailable', title:'Report time is invalid', detail:'The report is dated in the future. Do not treat it as a current check.'};
   if (report.status === 'failed') return {state:'failed', title:'Verification reported a failure', detail:'Inspect the failed checks below. A network error may mean a node is unavailable; it does not by itself establish invalid transactions.'};
   if (age === 'stale') return {state:'stale', title:'Saved verification is over 24 hours old', detail:'These checks passed at the time shown below. They are not a current confirmation of node availability.'};
-  return {state:'passed', title:'18 checks passed', detail:'Five node fetches matched the recorded evidence. Validation checks and recorded signer outcomes are listed separately.'};
+  return {state:'passed', title:'18 checks passed', detail:'Five public testnet responses matched the recorded evidence. Validation checks and recorded signer outcomes are listed separately.'};
 }

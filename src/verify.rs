@@ -289,7 +289,7 @@ pub fn fetched_check(
     let result = (|| {
         let (bytes, height) = fetched.as_ref().map_err(String::clone)?;
         let stored = records.bytes(tx.file).map_err(|e| e.to_string())?;
-        if sha256(bytes) != sha256(&stored) {
+        if bytes != &stored {
             return Err(format!(
                 "the server's bytes hash to {}, the stored file to {}",
                 hex::encode(sha256(bytes)),
