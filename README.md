@@ -25,6 +25,11 @@ not protect a solver against a dishonest payer.**
 
 ## Demo
 
+[**Open the browser demo →**](https://lancekrogers.github.io/ironwood-intent-escrow/)
+Click **Verify on testnet** to check the completed fill and refund against public
+testnet data. No wallet, funds, sign-in, or installation needed. It runs the
+shared Rust checks in WebAssembly; it does not create a new escrow.
+
 <p align="center">
   <a href="https://youtu.be/LTd2J9bINGY"><img src="docs/thumbnail.jpg" alt="Watch the Ironwood Intent Escrow demo on YouTube" width="800"></a><br>
   <a href="https://youtu.be/LTd2J9bINGY">Watch on YouTube · 3:05</a>

@@ -1,0 +1,43 @@
+name: Publish browser demo
+
+on:
+  push:
+    branches: [main, feat/browser-verifier]
+    paths:
+      - 'web/**'
+      - 'runs/**'
+      - 'docs/thumbnail.jpg'
+      - 'scripts/build_web.py'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - name: Validate and package public assets
+        run: |
+          python3 -c 'import json; c=json.load(open("web/config.json")); assert c["mode"] == "live" and c["report_url"].startswith("https://")'
+          node --test web/report.test.mjs
+          python3 scripts/build_web.py
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: target/web
+      - uses: actions/deploy-pages@v4
+        id: deployment

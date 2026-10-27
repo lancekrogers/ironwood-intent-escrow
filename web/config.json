@@ -1,1 +1,4 @@
-{"mode":"unconfigured","report_url":"verification.json"}
+{
+  "mode": "live",
+  "report_url": "https://ironwood-verifier.lancekrogers.workers.dev/api/verify"
+}
