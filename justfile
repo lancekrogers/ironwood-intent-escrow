@@ -30,3 +30,17 @@ web-build:
 # Serve the packaged page locally.
 web-preview:
     python3 -m http.server 8765 --bind 127.0.0.1 --directory target/web
+
+# Compile the read-only verifier into Wasm (see worker/README.md for prerequisites).
+worker-build:
+    python3 scripts/build_worker.py
+
+# Exercise the Rust and actual WebAssembly paths, plus strict gRPC decoding.
+worker-check: worker-build
+    cargo test --manifest-path worker/wasm/Cargo.toml --locked
+    node --test worker/*.test.mjs
+    cd worker && npm exec -- wrangler deploy --dry-run
+
+# Use Cloudflare's edge for transport testing; local emulation cannot prove gRPC conversion.
+worker-preview: worker-build
+    cd worker && npm exec -- wrangler dev --remote --port 8789

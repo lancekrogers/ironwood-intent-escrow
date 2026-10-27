@@ -32,6 +32,13 @@ Live mode therefore requires an additional backend. Published mode can use
 GitHub Actions to generate the report and publish it with Pages. No credentials
 or wallets belong in either deployment.
 
+The [Cloudflare Worker](../worker/README.md) now compiles these checks to
+WebAssembly and reuses the same Rust implementation. It is not ready to publish:
+the edge can fetch NEAR, but its Zcash gRPC connection currently fails with HTTP
+525. The native Python adapter remains available for a conventional backend or
+scheduled reports. The Worker needs a successful live run and measured Free-tier
+CPU usage before the frontend can point at it.
+
 ## Report integrity and limits
 
 `scripts/verification_report.py` invokes the fixed `verify` binary with no user

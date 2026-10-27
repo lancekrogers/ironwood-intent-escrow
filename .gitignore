@@ -12,3 +12,12 @@ demo/video/
 
 # Python demo build/test cache.
 __pycache__/
+
+# Worker tooling and generated Wasm
+worker/node_modules/
+worker/pkg/
+.wrangler/
+worker/worker-configuration.d.ts
+worker/wasm/target/
+.dev.vars*
+.env*

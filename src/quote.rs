@@ -14,7 +14,9 @@
 
 use std::fmt;
 
+#[cfg(feature = "native")]
 use rand::rngs::SysRng;
+#[cfg(feature = "native")]
 use rand::TryRng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use zcash_protocol::memo::{Memo, MemoBytes};
@@ -27,6 +29,7 @@ pub struct QuoteId([u8; 32]);
 
 impl QuoteId {
     /// A fresh id from the OS RNG.
+    #[cfg(feature = "native")]
     pub fn random() -> Result<Self, Error> {
         let mut bytes = [0u8; 32];
         SysRng
@@ -137,6 +140,7 @@ pub struct Quote {
 impl Quote {
     /// A quote with a fresh id from the OS RNG. A quote id is never reused:
     /// each run builds its own quote.
+    #[cfg(feature = "native")]
     pub fn new(
         destination_account: impl Into<String>,
         asset: impl Into<String>,
@@ -200,7 +204,7 @@ mod decimal_u128 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod tests {
     use super::*;
 

@@ -7,8 +7,11 @@
 //! `~/.ironwood-intent-escrow`, and nothing here touches the network; the
 //! binary fetches and hands the fetched bytes to these checks.
 
+use std::collections::BTreeMap;
+#[cfg(feature = "native")]
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "native")]
+use std::path::Path;
 
 use serde_json::Value;
 use zcash_primitives::transaction::{Transaction, TxId};
@@ -18,7 +21,11 @@ use crate::attest::{check_payload, Banned, NearTxPointer};
 use crate::checker::check_zec;
 use crate::error::Error;
 use crate::quote::Quote;
-use crate::run::sha256;
+use sha2::{Digest, Sha256};
+
+fn sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
 
 /// One recorded Zcash transaction: its file and where its record keeps its
 /// id and height.
@@ -64,7 +71,7 @@ pub const ZEC_TXS: [ZecTx; 4] = [
 
 /// The records directory, loaded.
 pub struct Records {
-    dir: PathBuf,
+    files: BTreeMap<String, Vec<u8>>,
     /// `fill.json`.
     pub fill: Value,
     /// `refund.json`.
@@ -76,26 +83,57 @@ pub struct Records {
 }
 
 impl Records {
-    /// Reads the records in `dir`. A missing or unreadable file is an error.
+    /// Reads the public records in `dir`. A missing file is an error.
+    #[cfg(feature = "native")]
     pub fn load(dir: &Path) -> Result<Self, Error> {
-        let json = |name: &str| -> Result<Value, Error> {
-            serde_json::from_slice(&read(dir, name)?)
-                .map_err(|e| Error::Checker(format!("{name}: {e}")))
+        let mut files = BTreeMap::new();
+        for name in [
+            "fill.json",
+            "refund.json",
+            "fill.quote.json",
+            "refund.quote.json",
+            "fill.near.json",
+            "fill.fund.tx",
+            "fill.spend.tx",
+            "refund.fund.tx",
+            "refund.spend.tx",
+        ] {
+            let path = dir.join(name);
+            files.insert(
+                name.to_string(),
+                fs::read(&path).map_err(|e| Error::io(path, e))?,
+            );
+        }
+        Self::from_files(files)
+    }
+
+    /// Loads records supplied by an embedding application, without filesystem access.
+    pub fn from_files(files: BTreeMap<String, Vec<u8>>) -> Result<Self, Error> {
+        let get = |name: &str| {
+            files
+                .get(name)
+                .ok_or_else(|| Error::Checker(format!("missing record: {name}")))
         };
-        let quote_text = String::from_utf8(read(dir, "fill.quote.json")?)
+        let json = |name: &str| {
+            serde_json::from_slice(get(name)?).map_err(|e| Error::Checker(format!("{name}: {e}")))
+        };
+        let quote = std::str::from_utf8(get("fill.quote.json")?)
             .map_err(|e| Error::Checker(format!("fill.quote.json: {e}")))?;
-        Ok(Records {
-            dir: dir.to_path_buf(),
+        Ok(Self {
             fill: json("fill.json")?,
             refund: json("refund.json")?,
-            fill_quote: Quote::parse(&quote_text)?,
-            near_payload: read(dir, "fill.near.json")?,
+            fill_quote: Quote::parse(quote)?,
+            near_payload: get("fill.near.json")?.clone(),
+            files,
         })
     }
 
-    /// A file in the records directory.
+    /// A file in the records, copied for the caller.
     pub fn bytes(&self, name: &str) -> Result<Vec<u8>, Error> {
-        read(&self.dir, name)
+        self.files
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error::Checker(format!("missing record: {name}")))
     }
 
     /// The run record a transaction belongs to.
@@ -405,11 +443,6 @@ fn payload_hash_matches(records: &Records, payload: &[u8]) -> Result<(), String>
             "the payload hashes to {actual}, the record says {recorded}"
         ))
     }
-}
-
-fn read(dir: &Path, name: &str) -> Result<Vec<u8>, Error> {
-    let path = dir.join(name);
-    fs::read(&path).map_err(|e| Error::io(path, e))
 }
 
 fn text<'a>(record: &'a Value, field: &str) -> Result<&'a str, Error> {

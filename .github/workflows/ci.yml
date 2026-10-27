@@ -25,3 +25,39 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test
+
+  wasm:
+    name: WebAssembly verifier and browser checks
+    runs-on: ubuntu-latest
+    env:
+      CC_wasm32_unknown_unknown: clang
+      AR_wasm32_unknown_unknown: llvm-ar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            worker/wasm -> target
+      - name: Install Wasm binding tool
+        run: cargo install wasm-bindgen-cli --version 0.2.129 --locked --root target/wasm-tools
+      - name: Build and test the Worker
+        run: |
+          npm ci --prefix worker
+          python3 scripts/build_worker.py
+          cargo fmt --manifest-path worker/wasm/Cargo.toml --check
+          cargo test --manifest-path worker/wasm/Cargo.toml --locked
+          node --test worker/*.test.mjs
+          cd worker && npm exec -- wrangler deploy --dry-run
+      - name: Browser report checks
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          node --test web/report.test.mjs
