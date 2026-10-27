@@ -47,6 +47,10 @@ jobs:
           workspaces: |
             . -> target
             worker/wasm -> target
+      - name: Install LLVM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
       - name: Install Wasm binding tool
         run: cargo install wasm-bindgen-cli --version 0.2.129 --locked --root target/wasm-tools
       - name: Build and test the Worker
