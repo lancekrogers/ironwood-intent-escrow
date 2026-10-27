@@ -5,6 +5,8 @@ import {initSync, request_spec, verify_responses} from './pkg/ironwood_verifier_
 import {validateReport} from '../web/report.mjs';
 
 initSync({module: readFileSync(new URL('./pkg/ironwood_verifier_wasm_bg.wasm', import.meta.url))});
+// Match production startup: prepare immutable transaction checks before requests.
+request_spec();
 const read = name => readFileSync(new URL(`../runs/${name}`, import.meta.url));
 function recordedResponses() {
   const fetched = {};
@@ -34,6 +36,8 @@ test('Wasm rejects a changed transaction and failed live requests', () => {
   assert.equal(report.status, 'failed');
   const failed = report.checks.filter(c => c.status === 'fail').map(c => c.name);
   assert.ok(failed.includes('fill.spend.tx fetched'));
+  fetched['fill.spend.tx'].data = '00';
+  assert.ok(verify(fetched).checks.some(c => c.name === 'fill.spend.tx check_zec' && c.status === 'fail'));
   assert.ok(failed.includes('refund.spend.tx fetched'));
   assert.ok(failed.includes('refund.spend.tx check_zec'));
   const absent = JSON.parse(verify_responses('{}', new Uint8Array(), 'NEAR unavailable'));

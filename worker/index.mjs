@@ -3,8 +3,8 @@ import wasmModule from './pkg/ironwood_verifier_wasm_bg.wasm';
 import {boundedBody, fetchTransaction, ZCASH_SOURCE} from './upstream.mjs';
 import {commit} from './pkg/source.mjs';
 
-// Generated Wasm glue holds no network/request state. Calls into Rust are
-// synchronous; all network I/O and reports remain local to each request.
+// Rust prepares checks of immutable embedded transactions at module startup.
+// All live network responses and reports remain local to each request.
 initSync({module: wasmModule});
 const spec = JSON.parse(request_spec());
 

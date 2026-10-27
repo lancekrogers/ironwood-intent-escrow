@@ -6,6 +6,13 @@ native sockets, and OS randomness are excluded. Public `runs/` records are
 embedded at build time. Each click queries testnet data services; it does not
 submit a transaction or use keys or funds.
 
+At Worker startup, Rust computes and retains the checks for the immutable embedded
+Zcash transactions. Each request fetches fresh responses and checks mined heights;
+a cryptographic result is reused only when the fetched bytes exactly equal the
+checked bytes. Changed bytes run through the original checker. A failed fetch
+never receives a cached pass. This keeps repeated cryptographic work outside the
+Free plan’s per-request CPU budget without caching network verification reports.
+
 Zcash bytes and mined heights come from the public
 [ZecBlock testnet HTTPS API](https://github.com/Kenbak/zecblock/blob/main/public/openapi-v1.json).
 NEAR receipts come directly from its archival testnet RPC. The report names both
