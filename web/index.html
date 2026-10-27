@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Inspect and verify real Zcash Ironwood escrow and NEAR testnet payment evidence. No wallet or funds required.">
+  <title>Ironwood · Testnet verification</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <header class="topbar wrap">
+    <a class="brand" href="./"><span class="mark" aria-hidden="true">I</span> IRONWOOD <span class="brand-sub">INTENT ESCROW</span></a>
+    <a class="source-link" href="https://github.com/lancekrogers/ironwood-intent-escrow" target="_blank" rel="noopener noreferrer">Source code ↗</a>
+  </header>
+  <main class="wrap">
+    <section class="hero" aria-labelledby="title">
+      <div class="eyebrow"><span class="dot"></span> ZECATHON / CROSS-CHAIN / TESTNET</div>
+      <h1>Shielded settlement.<br><span>Evidence you can check.</span></h1>
+      <p class="intro">ZEC stays shielded while a solver pays on NEAR. Inspect the completed fill and refund, then check their testnet evidence.</p>
+      <div class="hero-meta"><span>No wallet</span><span>No funds</span><span>No installation</span></div>
+    </section>
+
+    <section class="paths" aria-label="Two completed testnet paths">
+      <article class="path-card">
+        <div class="card-top"><span class="step">01 / FILL</span><span class="tag">Recorded run</span></div>
+        <h2>Payment made. ZEC released.</h2>
+        <div class="flow"><span>ZEC escrow</span><span aria-hidden="true">→</span><span>NEAR payment</span><span aria-hidden="true">→</span><span>Solver paid</span></div>
+        <p>The payer checks the solver’s 0.01 wNEAR payment. Payer and solver co-sign the shielded ZEC release.</p>
+        <details><summary>Inspect the fill transactions <span aria-hidden="true">+</span></summary><div id="fill-evidence" class="evidence">Loading recorded evidence…</div></details>
+      </article>
+      <article class="path-card refund">
+        <div class="card-top"><span class="step">02 / REFUND</span><span class="tag">Recorded run</span></div>
+        <h2>No fill. ZEC returned.</h2>
+        <div class="flow"><span>ZEC escrow</span><span aria-hidden="true">→</span><span>Quote expires</span><span aria-hidden="true">→</span><span>Fresh address</span></div>
+        <p>The payer and its deadline device co-sign a refund. The fresh refund address never enters the quote or NEAR.</p>
+        <details><summary>Inspect the refund transactions <span aria-hidden="true">+</span></summary><div id="refund-evidence" class="evidence">Loading recorded evidence…</div></details>
+      </article>
+    </section>
+
+    <section class="verification" aria-labelledby="verification-title">
+      <div class="verification-header"><div><div class="eyebrow">CHECK THE EVIDENCE</div><h2 id="verification-title">Testnet verification</h2></div><button id="verify-button" type="button" disabled>Loading…</button></div>
+      <p id="mode-description" class="muted">Checking verifier availability…</p>
+      <div id="status" class="status neutral" role="status" aria-live="polite"><span class="status-symbol" aria-hidden="true">○</span><div><strong id="status-title">Not checked in this session</strong><p id="status-detail">Results appear after you request a check.</p></div></div>
+      <div id="report-meta" class="report-meta" hidden></div>
+      <div id="results" class="results"></div>
+      <div class="verification-foot"><span>Recorded runs: Oct 22–23, 2026</span><a id="report-download" href="verification.json" hidden>Download report ↓</a></div>
+    </section>
+
+    <section class="context-grid">
+      <article><div class="eyebrow">WHAT THIS DEMONSTRATES</div><h2>Real transactions. Read-only checks.</h2><p>This demo verifies completed transactions; it does not fund a new escrow or repeat signing. Node responses are compared with the committed evidence. Signer decisions are recorded outcomes, labeled separately below.</p><p>The NEAR accounts and payment amount are public. The receipt carries no Zcash address, transaction ID, or amount. Observers may still correlate activity by timing.</p></article>
+      <article class="limits"><div class="eyebrow">TRUST BOUNDARY</div><h2>The payer holds two shares.</h2><p>This protects the payer and an honest payer’s automation. It does not protect a solver against a dishonest payer. The payer can bypass signer policy or withhold a fill claim.</p><p>Testnet only. Not audited. Trusted-dealer key generation, signer-enforced expiry, and no quantum recovery.</p><a href="https://github.com/lancekrogers/ironwood-intent-escrow/blob/main/docs/technical-guide.md#threat-model" target="_blank" rel="noopener noreferrer">Read the full threat model ↗</a></article>
+    </section>
+    <section class="watch"><div><div class="eyebrow">THE WALKTHROUGH</div><h2>See both paths in action.</h2><p>3:05 · Narrated demo with live verification and labeled recordings.</p><a href="https://youtu.be/LTd2J9bINGY" target="_blank" rel="noopener noreferrer">Watch on YouTube ↗</a></div><a href="https://youtu.be/LTd2J9bINGY" target="_blank" rel="noopener noreferrer"><img src="thumbnail.jpg" alt="Watch the Ironwood Intent Escrow walkthrough" loading="lazy" width="1280" height="720"></a></section>
+  </main>
+  <footer class="wrap"><span>IRONWOOD INTENT ESCROW</span><span>Built with <a href="https://fest.build/" target="_blank" rel="noopener noreferrer">Festival</a> · MIT OR Apache-2.0</span></footer>
+</body>
+</html>
