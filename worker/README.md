@@ -54,9 +54,10 @@ in `web/config.json`. Publish the frontend with the repository's Pages workflow.
 CORS is restricted to `https://lancekrogers.github.io`; the endpoint itself is
 public. `GET /health` reports service health and source commit.
 
-The Worker has a 10 ms CPU limit to match the
-[Workers Free allowance](https://developers.cloudflare.com/workers/platform/limits/).
-Waiting for network responses does not consume that CPU budget. No Containers,
+Cloudflare applies its fixed 10 ms CPU limit on the
+[Workers Free plan](https://developers.cloudflare.com/workers/platform/limits/).
+Free accounts must omit the configurable `limits.cpu_ms` setting, which is
+reserved for paid plans. Waiting for network responses does not consume that CPU budget. No Containers,
 database, domain purchase, or paid plan upgrade is needed. Free request/usage
 limits still apply. A local benchmark is not a measurement of edge CPU usage.
 
