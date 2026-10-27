@@ -119,15 +119,12 @@ Planned and executed with [Festival](https://github.com/Obedience-Corp/festival)
 and its [fest CLI](https://github.com/Obedience-Corp/fest): design decisions,
 implementation, tests, and review tracked in files and Git.
 
-<details>
-<summary>Watch the build and submission replays</summary>
+Watch the build and submission replays:
 
 <p align="center">
   <a href="docs/replays/ironwood-intent-escrow-II0001.gif"><img src="docs/replays/ironwood-intent-escrow-II0001.gif" alt="Implementation and review replay" width="49%"></a>
   <a href="docs/replays/zecathon-submission-ZS0001.gif"><img src="docs/replays/zecathon-submission-ZS0001.gif" alt="Submission preparation and review replay" width="49%"></a>
 </p>
-
-</details>
 
 ## License
 
