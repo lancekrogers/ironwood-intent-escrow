@@ -18,26 +18,22 @@ produce `verification.json`. It exits nonzero on a failed or incomplete run.
 The report is still written on verifier failure so a publisher can display the
 failure instead of silently retaining a previous green result.
 
-Hosting is not configured yet. `web/config.json` intentionally disables the
-button until the deployment mode is chosen:
+The frontend is hosted on GitHub Pages and calls the
+[Cloudflare Worker](../worker/README.md). The Worker compiles the shared Rust
+checks to WebAssembly, queries the ZecBlock testnet HTTPS API and NEAR archival
+RPC, and returns the same report schema. It needs no native server or credentials.
+The report links to the deployed source commit and names the data sources.
 
-- `{"mode":"live","report_url":"https://<verifier-host>/api/verify"}` asks a
-  hosted service to run the read-only verifier for the request.
-- `{"mode":"published","report_url":"verification.json"}` reads a report
-  generated during publication. The UI explicitly says this is not an
-  on-demand node check and flags a report older than 24 hours.
+`web/config.json` selects the endpoint and labels the mode explicitly:
 
-GitHub Pages serves the interface but cannot execute the native Rust binary.
-Live mode therefore requires an additional backend. Published mode can use
-GitHub Actions to generate the report and publish it with Pages. No credentials
-or wallets belong in either deployment.
+- `{"mode":"live","report_url":"https://<verifier-host>/api/verify"}` queries
+  public testnet services when clicked.
+- `{"mode":"published","report_url":"verification.json"}` reads a previously
+  generated report, explicitly labeled as not an on-demand check.
 
-The [Cloudflare Worker](../worker/README.md) now compiles these checks to
-WebAssembly and reuses the same Rust implementation. It is not ready to publish:
-the edge can fetch NEAR, but its Zcash gRPC connection currently fails with HTTP
-525. The native Python adapter remains available for a conventional backend or
-scheduled reports. The Worker needs a successful live run and measured Free-tier
-CPU usage before the frontend can point at it.
+`just web-build` remains useful for local native-verifier reports. The Pages
+workflow packages the static frontend with `scripts/build_web.py`; live reports
+come from the Worker, not a scheduled build.
 
 ## Report integrity and limits
 
@@ -45,7 +41,8 @@ CPU usage before the frontend can point at it.
 arguments. It requires the exact set of 18 named checks, matching totals, no
 skips, and an exit code consistent with the outcome. Timeouts and malformed
 output become `unavailable`, never successful verification. Reports include a
-UTC timestamp and source commit. The browser repeats the schema and consistency
+UTC timestamp and source commit. The Wasm adapter calls these same checks directly, without parsing CLI output.
+The browser repeats the schema and consistency
 checks before showing results and clears earlier results if a request fails.
 
 The page distinguishes fetched node evidence, transaction/receipt validation,

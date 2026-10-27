@@ -1,6 +1,6 @@
 import {initSync, request_spec, verify_responses} from './pkg/ironwood_verifier_wasm.js';
 import wasmModule from './pkg/ironwood_verifier_wasm_bg.wasm';
-import {boundedBody, fetchTransaction} from './grpc.mjs';
+import {boundedBody, fetchTransaction, ZCASH_SOURCE} from './upstream.mjs';
 import {commit} from './pkg/source.mjs';
 
 // Generated Wasm glue holds no network/request state. Calls into Rust are
@@ -27,13 +27,13 @@ export default {
     const started = Date.now();
     const report = {schema_version: 1, mode: 'live', commit, run_url: null,
       status: 'unavailable', checks: [], error: null,
-      sources: {zcash: spec.zcash_url, near: spec.near_url}};
+      sources: {zcash: ZCASH_SOURCE, near: spec.near_url}};
     try {
       const zcash = {};
       let near = new Uint8Array(), nearError = '';
       await Promise.all([
         ...spec.transactions.map(async tx => {
-          try { zcash[tx.file] = await fetchTransaction(spec.zcash_url, tx.txid); }
+          try { zcash[tx.file] = await fetchTransaction(tx.txid); }
           catch (error) { zcash[tx.file] = {error: error.message}; }
         }),
         (async () => {

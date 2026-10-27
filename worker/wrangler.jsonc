@@ -3,8 +3,8 @@
   "name": "ironwood-verifier",
   "main": "index.mjs",
   "compatibility_date": "2026-10-27",
-  "compatibility_flags": ["auto_grpc_convert"],
   "workers_dev": true,
+  "limits": {"cpu_ms": 10},
   "vars": {
     "ALLOWED_ORIGIN": "https://lancekrogers.github.io"
   },

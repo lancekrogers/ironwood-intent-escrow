@@ -15,7 +15,7 @@ function label(name) {
   if (labels[name]) return labels[name];
   const [file, check] = name.split(' ');
   const title = {'fill.fund.tx':'Fill funding', 'fill.spend.tx':'Solver release', 'refund.fund.tx':'Refund funding', 'refund.spend.tx':'Refund payment'}[file];
-  return `${title}: ${{txid:'stored bytes match the transaction ID', fetched:'node bytes and mined height match', check_zec:'no transparent transfer or zero outgoing viewing key'}[check]}`;
+  return `${title}: ${{txid:'stored bytes match the transaction ID', fetched:'API bytes and mined height match', check_zec:'no transparent transfer or zero outgoing viewing key'}[check]}`;
 }
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -43,9 +43,12 @@ function renderReport(report) {
   const meta = $('report-meta'); meta.hidden = false;
   const stamp = element('time', `Checked ${new Date(report.checked_at).toLocaleString()} (your local time)`); stamp.dateTime = report.checked_at;
   meta.append(stamp, link(`Source ${report.commit.slice(0,7)} ↗`, `${REPO}/commit/${report.commit}`));
+  for (const [chain, source] of Object.entries(report.sources || {})) {
+    if (typeof source === 'string' && /^https:\/\//.test(source)) meta.append(link(`${chain.toUpperCase()} data source ↗`, source));
+  }
   if (report.run_url && /^https:\/\/github\.com\/lancekrogers\/ironwood-intent-escrow\/actions\/runs\/\d+$/.test(report.run_url)) meta.append(link('Verification run ↗', report.run_url));
   const groups = [
-    ['network','Public node responses','Live when this report was generated: fetched bytes and mined heights are compared with the committed records.'],
+    ['network','Public testnet data','Live when this report was generated: bytes and mined heights from public services are compared with the committed records.'],
     ['validation','Transaction and receipt validation','Checks performed by the existing Rust verifier on the fetched and committed data.'],
     ['recorded','Recorded signer outcomes','Assertions from the completed run records. This click does not repeat FROST signing or independently prove these decisions.'],
   ];
@@ -72,9 +75,9 @@ async function json(url, timeout = 20000) {
 }
 async function verify() {
   const button = $('verify-button'); button.disabled = true; clearReport();
-  setStatus('neutral', config.mode === 'live' ? 'Checking public testnet nodes…' : 'Loading the latest published verification…', config.mode === 'live' ? 'The server is running the read-only Rust verifier. This can take up to three minutes.' : 'This retrieves a timestamped report; it does not start a new chain check.');
+  setStatus('neutral', config.mode === 'live' ? 'Checking public testnet APIs…' : 'Loading the latest published verification…', config.mode === 'live' ? 'The server is running the shared Rust verification checks in WebAssembly against public testnet data. This can take up to 30 seconds.' : 'This retrieves a timestamped report; it does not start a new chain check.');
   try {
-    const report = validateReport(await json(config.report_url, config.mode === 'live' ? 200000 : 20000));
+    const report = validateReport(await json(config.report_url, config.mode === 'live' ? 40000 : 20000));
     renderReport(report);
   } catch (error) {
     setStatus('unavailable','Could not retrieve verification',`${error.name === 'TimeoutError' ? 'The request timed out.' : error.message} No successful result is claimed. You can retry or run the verifier from the repository.`);
@@ -104,7 +107,7 @@ async function start() {
     const url = new URL(config.report_url, location.href);
     if (url.protocol !== 'https:' && url.origin !== location.origin) throw new Error('The verifier endpoint must use HTTPS.');
     $('mode-description').textContent = config.mode === 'live'
-      ? 'Live verification of recorded testnet runs. Clicking below asks the server to run the same Rust verifier available in the repository.'
+      ? 'Live verification of recorded testnet runs. Clicking below asks the server to run the same Rust verification checks used by the repository’s CLI.'
       : 'Published verification of recorded testnet runs. GitHub Actions runs the Rust verifier; this page loads its latest timestamped report. Clicking does not start a fresh node query.';
     $('verify-button').textContent = config.mode === 'live' ? 'Verify on testnet →' : 'Load latest verification →';
     $('verify-button').disabled = false; $('verify-button').addEventListener('click',verify);

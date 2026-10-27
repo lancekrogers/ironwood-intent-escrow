@@ -35,12 +35,12 @@ web-preview:
 worker-build:
     python3 scripts/build_worker.py
 
-# Exercise the Rust and actual WebAssembly paths, plus strict gRPC decoding.
+# Exercise the Rust and actual WebAssembly paths, plus upstream response validation.
 worker-check: worker-build
     cargo test --manifest-path worker/wasm/Cargo.toml --locked
     node --test worker/*.test.mjs
     cd worker && npm exec -- wrangler deploy --dry-run
 
-# Use Cloudflare's edge for transport testing; local emulation cannot prove gRPC conversion.
+# Test the live Worker on Cloudflare's edge.
 worker-preview: worker-build
     cd worker && npm exec -- wrangler dev --remote --port 8789
