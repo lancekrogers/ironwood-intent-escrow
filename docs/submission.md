@@ -32,7 +32,16 @@ and an honest payer's automation, not a solver facing a dishonest payer.
 | NEAR observer | Both NEAR accounts, the wNEAR amount, the 32-byte quote id | Any Zcash address, transaction id, or amount |
 | Solver | The escrow note and its value, when it is spent, its own payment | The refund address or the refund output |
 
-## Verify it in two minutes
+## Working demo
+
+https://lancekrogers.github.io/ironwood-intent-escrow/
+
+Open the page and click **Verify on testnet**. A Cloudflare Worker runs the shared
+Rust checks in WebAssembly on freshly fetched Zcash and NEAR testnet data.
+No wallet, funds, sign-in, or installation is required. This verifies the recorded
+fill/refund transactions; it does not execute a new escrow or repeat signing.
+
+## Verify with the CLI
 
 ```text
 git clone https://github.com/lancekrogers/ironwood-intent-escrow

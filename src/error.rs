@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+#[cfg(feature = "native")]
 use crate::cosign::SignerId;
 
 /// Every way this crate refuses or fails.
@@ -16,6 +17,7 @@ pub enum Error {
     ThresholdNotMet(String),
 
     /// The same signer appears twice in one signing session.
+    #[cfg(feature = "native")]
     #[error("duplicate_signer: {0:?} appears more than once")]
     DuplicateSigner(SignerId),
 
@@ -165,6 +167,7 @@ pub enum Error {
     NotARelease(String),
 
     /// A policy signer was handed another holder's share file.
+    #[cfg(feature = "native")]
     #[error("wrong_role: expected the {expected:?} share, found the {found:?} share")]
     WrongRole {
         /// The role the signer plays.
@@ -219,6 +222,7 @@ impl Error {
     }
 }
 
+#[cfg(feature = "native")]
 impl From<reddsa::frost::redpallas::Error> for Error {
     fn from(e: reddsa::frost::redpallas::Error) -> Self {
         Error::Frost(e.to_string())

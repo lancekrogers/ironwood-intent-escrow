@@ -15,3 +15,32 @@ demo-video:
 
 # Render the narration, then the video
 demo: demo-audio demo-video
+
+# Check the web report adapter and browser report validation.
+web-check:
+    python3 -m unittest discover -s scripts -p 'test_*.py'
+    node --test web/report.test.mjs
+
+# Package the static page; verifier hosting is configured in web/config.json.
+web-build:
+    cargo build --release --locked --bin verify
+    python3 scripts/build_web.py
+    python3 scripts/verification_report.py --output target/web/verification.json
+
+# Serve the packaged page locally.
+web-preview:
+    python3 -m http.server 8765 --bind 127.0.0.1 --directory target/web
+
+# Compile the read-only verifier into Wasm (see worker/README.md for prerequisites).
+worker-build:
+    python3 scripts/build_worker.py
+
+# Exercise the Rust and actual WebAssembly paths, plus upstream response validation.
+worker-check: worker-build
+    cargo test --manifest-path worker/wasm/Cargo.toml --locked
+    node --test worker/*.test.mjs
+    cd worker && npm exec -- wrangler deploy --dry-run
+
+# Test the live Worker on Cloudflare's edge.
+worker-preview: worker-build
+    cd worker && npm exec -- wrangler dev --remote --port 8789

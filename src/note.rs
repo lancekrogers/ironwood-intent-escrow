@@ -38,9 +38,9 @@ use crate::error::Error;
 use crate::quote::QuoteId;
 use crate::wallet::PayerWallet;
 
-/// The all-zero outgoing viewing key. An output encrypted to it can be read
-/// by anyone, which is how indexers read bridge payouts. Never used here.
-pub const ZERO_OVK: [u8; 32] = [0u8; 32];
+pub use crate::checker::{
+    actions_opening_under, no_action_opens_under_zero_ovk, transparent_bundle_is_empty, ZERO_OVK,
+};
 
 /// What a transaction spends: one Ironwood note, the full viewing key that
 /// owns it, and its Merkle path to `anchor`. The funding transaction spends
@@ -392,41 +392,6 @@ pub fn tx_bytes(tx: &Transaction) -> Result<Vec<u8>, Error> {
     tx.write(&mut bytes)
         .map_err(|e| Error::Pczt(format!("serialize: {e}")))?;
     Ok(bytes)
-}
-
-/// Whether the transaction has no transparent input and no transparent
-/// output.
-pub fn transparent_bundle_is_empty(tx: &Transaction) -> bool {
-    tx.transparent_bundle()
-        .is_none_or(|b| b.vin.is_empty() && b.vout.is_empty())
-}
-
-/// The shielded actions, Orchard and Ironwood, whose `out_ciphertext` opens
-/// under `ovk`, as `(pool, action index)`. Trial decryption is the only
-/// test: the outgoing viewing key is not a transaction field.
-pub fn actions_opening_under(
-    tx: &Transaction,
-    ovk: &OutgoingViewingKey,
-) -> Vec<(&'static str, usize)> {
-    let pools = [
-        ("orchard", tx.orchard_bundle()),
-        ("ironwood", tx.ironwood_bundle()),
-    ];
-    pools
-        .into_iter()
-        .flat_map(|(pool, bundle)| {
-            bundle.into_iter().flat_map(move |b| {
-                (0..b.actions().len())
-                    .filter(|i| b.recover_output_with_ovk(*i, ovk).is_some())
-                    .map(move |i| (pool, i))
-            })
-        })
-        .collect()
-}
-
-/// Whether no shielded action opens under the all-zero outgoing viewing key.
-pub fn no_action_opens_under_zero_ovk(tx: &Transaction) -> bool {
-    actions_opening_under(tx, &OutgoingViewingKey::from(ZERO_OVK)).is_empty()
 }
 
 fn rng() -> UnwrapErr<SysRng> {

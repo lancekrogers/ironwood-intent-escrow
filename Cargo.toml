@@ -6,51 +6,80 @@ publish = false
 description = "A 2-of-3 FROST escrow on Zcash Ironwood that fills on NEAR testnet or refunds to a fresh shielded address"
 license = "MIT OR Apache-2.0"
 
+[features]
+# The CLI remains the default. Read-only Wasm builds exclude wallets, proving,
+# OS randomness, filesystem loading, and native networking.
+default = ["native"]
+native = [
+    "dep:frost-core",
+    "dep:frost-rerandomized",
+    "dep:reddsa",
+    "dep:pczt",
+    "dep:zcash_client_backend",
+    "dep:zcash_client_sqlite",
+    "dep:zcash_keys",
+    "dep:zip32",
+    "dep:pasta_curves",
+    "dep:rand_core",
+    "dep:zeroize",
+    "dep:async-trait",
+    "dep:rand",
+    "dep:rusqlite",
+    "dep:rustls",
+    "dep:webpki-roots",
+    "dep:shardtree",
+    "dep:secrecy",
+    "dep:tokio",
+    "dep:tonic",
+    "orchard/default",
+    "zcash_primitives/default",
+]
+
 [dependencies]
 # FROST: docs/decisions/stack.md pins these. reddsa 0.5.2 is the last version
 # with the RedPallas FROST ciphersuite; orchard pulls reddsa 0.6 beside it.
-frost-core = "3.0.0"
-frost-rerandomized = "3.0.0"
-reddsa = { version = "0.5.2", features = ["frost"] }
+frost-core = { version = "3.0.0", optional = true }
+frost-rerandomized = { version = "3.0.0", optional = true }
+reddsa = { version = "0.5.2", features = ["frost"], optional = true }
 
 # librustzcash, Ironwood-capable releases of 2026-10-21.
-orchard = "0.16.0"
-zcash_primitives = "0.31.0"
-pczt = { version = "0.10.0", features = ["orchard", "prover", "signer", "io-finalizer", "tx-extractor", "zcp-builder"] }
-zcash_client_backend = { version = "0.25.0", features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-transport", "lightwalletd-tonic-tls-webpki-roots", "pczt", "sync"] }
-zcash_client_sqlite = { version = "0.23.0", features = ["orchard", "transparent-inputs"] }
-zcash_keys = { version = "0.17.0", features = ["orchard"] }
-zip32 = "0.3"
+orchard = { version = "0.16.0", default-features = false, features = ["std"] }
+zcash_primitives = { version = "0.31.0", default-features = false, features = ["std"] }
+pczt = { version = "0.10.0", features = ["orchard", "prover", "signer", "io-finalizer", "tx-extractor", "zcp-builder"], optional = true }
+zcash_client_backend = { version = "0.25.0", features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-transport", "lightwalletd-tonic-tls-webpki-roots", "pczt", "sync"], optional = true }
+zcash_client_sqlite = { version = "0.23.0", features = ["orchard", "transparent-inputs"], optional = true }
+zcash_keys = { version = "0.17.0", features = ["orchard"], optional = true }
+zip32 = { version = "0.3", optional = true }
 zcash_address = "0.14.0"
 zcash_protocol = "0.11.0"
 
 # orchard's own curve version, for the zero randomizer that reads ask's bytes
 # and for alpha on the orchard side of the reddsa boundary (stack.md).
-pasta_curves = "0.6.1"
+pasta_curves = { version = "0.6.1", optional = true }
 # The FROST side (frost-core, reddsa 0.5.2) uses rand_core 0.6.
-rand_core = { version = "0.6", features = ["getrandom"] }
+rand_core = { version = "0.6", features = ["getrandom"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-zeroize = "1"
+zeroize = { version = "1", optional = true }
 
 # The payer wallet (stack.md, Funding): zcash_client_sqlite takes a rand 0.10
 # RNG and secrecy seeds. The light servers are gRPC over TLS on port 443;
 # ring is the rustls provider because aws-lc-rs needs cmake.
-async-trait = "0.1"
-rand = { version = "0.10", features = ["sys_rng"] }
+async-trait = { version = "0.1", optional = true }
+rand = { version = "0.10", features = ["sys_rng"], optional = true }
 base64 = "0.22"
 hex = "0.4"
-rusqlite = "0.37"
+rusqlite = { version = "0.37", optional = true }
 # The archival NEAR RPC is one HTTPS POST; rustls with ring and the webpki
 # roots are already in the tree through the light server path.
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-webpki-roots = "1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+webpki-roots = { version = "1", optional = true }
 sha2 = "0.10"
-shardtree = "0.8"
-secrecy = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
-tonic = { version = "0.14", default-features = false, features = ["channel", "tls-ring", "tls-webpki-roots"] }
+shardtree = { version = "0.8", optional = true }
+secrecy = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"], optional = true }
+tonic = { version = "0.14", default-features = false, features = ["channel", "tls-ring", "tls-webpki-roots"], optional = true }
 
 [dev-dependencies]
 incrementalmerkletree = "0.9"
